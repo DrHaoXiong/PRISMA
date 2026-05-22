@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# PRISMA outputs and local data
+results/
+prisma_real_results/
+data/
+figures/
+
+# Large or private data formats
+*.h5ad
+*.bed
+*.bim
+*.fam
+*.gz
+*.zip
+*.tsv
+*.txt
+*.csv
+!requirements.txt
+!examples/*.csv
+!examples/synthetic_data/
+!examples/synthetic_data/*.csv
+!examples/synthetic_data/*.tsv
+!examples/synthetic_data/*.bed
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

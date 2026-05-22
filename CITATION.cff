@@ -1,0 +1,6 @@
+cff-version: 1.2.0
+message: "If you use PRISMA, please cite the accompanying manuscript/preprint once available."
+title: "PRISMA: Polygenic Risk Integration via Summary-statistics Multi-tissue Array-decomposition"
+license: Apache-2.0
+authors:
+  - name: "PRISMA contributors"

@@ -1,0 +1,8 @@
+type,name,path
+gwas,DR,path/to/gwas_summary.tsv
+eqtl,Retina,path/to/retina_eqtl.tsv
+eqtl,Artery,path/to/artery_tibial_eqtl.tsv
+eqtl,Cortex,path/to/brain_cortex_eqtl.tsv
+eqtl,Pancreas,path/to/pancreas_eqtl.tsv
+eqtl,Blood,path/to/whole_blood_eqtl.tsv
+bed,LDetect,path/to/EUR_ld_blocks_hg19.bed
