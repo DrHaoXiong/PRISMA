@@ -67,6 +67,8 @@ Rank exploration:
 
 ## eQTL Preprocessing
 
+The diabetic retinopathy manuscript used SMR-formatted GTEx v8 BESD files for the GTEx tissue eQTL layers, not raw GTEx Portal allpairs tables as direct PRISMA inputs. These BESD-derived files were converted to SNP-level representative eQTL tables before model fitting. The accompanying data package provides the cleaned eQTL inputs used for exact manuscript reproduction.
+
 The `scripts/` folder includes a utility for converting raw GTEx eQTL association tables to PRISMA-formatted eQTL inputs:
 
     python scripts/clean_gtex_eqtl_for_prisma.py \
