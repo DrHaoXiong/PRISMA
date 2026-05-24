@@ -11,6 +11,11 @@ Core PRISMA engine:
 - solver.py
 - tune_rank.py
 
+Sanitized preprocessing utilities:
+
+- scripts/clean_gtex_eqtl_for_prisma.py
+- scripts/README.md
+
 Public setup files:
 
 - README.md

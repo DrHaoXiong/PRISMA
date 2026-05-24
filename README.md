@@ -29,7 +29,9 @@ Expected GWAS columns:
 
 Expected eQTL columns:
 
-- SNP, A1, A2, BETA, SE, TARGET_GENE
+- SNP, A1, A2, BETA, SE, CHR, BP, TARGET_GENE, P
+
+The core loader uses SNP, A1, A2, BETA, SE, and TARGET_GENE directly. CHR, BP, and P are retained in the standard preprocessing output for traceability and compatibility with manuscript data checks.
 
 Expected LD-block BED columns:
 
@@ -58,6 +60,22 @@ Output files:
 Rank exploration:
 
     python tune_rank.py --manifest examples/synthetic_data/manifest.csv --bed examples/synthetic_data/synthetic_ld_blocks.bed --max_rank 5
+
+## eQTL Preprocessing
+
+The `scripts/` folder includes a utility for converting raw GTEx eQTL association tables to PRISMA-formatted eQTL inputs:
+
+    python scripts/clean_gtex_eqtl_for_prisma.py \
+      --input data/raw/Whole_Blood.tsv.gz \
+      --output data/Whole_Blood_eQTL_cleaned_gtex_raw.txt \
+      --epi-map data/raw/Whole_Blood.lite.epi \
+      --summary-output results/Whole_Blood_cleaning_summary.csv
+
+Raw GTEx eQTL tables can contain multiple gene-level associations for the same rsID. PRISMA uses a SNP x tissue input matrix, so this preprocessing step retains one representative association per SNP: the row with the largest absolute eQTL Z-score, where Z = beta / se. For GTEx variant records, beta is interpreted with respect to ALT, so the standard output uses A1=ALT and A2=REF.
+
+For exact reproduction of the manuscript run, users should use the cleaned eQTL inputs distributed with the accompanying data package, or reconstruct them from the same SMR-formatted GTEx BESD resources using the same representative-selection rules. Raw GTEx eQTL tables and SMR-formatted GTEx BESD files are not expected to yield bitwise-identical SNP-level representative eQTL inputs because of differences in source formatting, coverage, and SNP-level representative selection.
+
+However, a sensitivity analysis replacing the SMR-derived Whole Blood eQTL layer with a raw GTEx-derived Whole Blood layer preserved the three tissue-level PRISMA axes after rank alignment, supporting robustness of the main tissue-axis conclusions. Thus, raw GTEx preprocessing is appropriate for robustness reproduction and new applications, whereas exact manuscript reproduction should use the released cleaned input files.
 
 ## Installation
 
