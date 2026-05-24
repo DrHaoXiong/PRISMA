@@ -37,6 +37,10 @@ Expected LD-block BED columns:
 
 - chr, start, stop
 
+## GWAS QC Recommendation
+
+Before running PRISMA, we recommend excluding the major histocompatibility complex (MHC) region and other known complex-LD regions from the trait GWAS summary statistics during GWAS quality control. The diabetic retinopathy manuscript analysis used an MHC-excluded GWAS input. Although the LD-block partitioner can exclude several complex-LD blocks when an appropriate LD-block BED file is supplied, the targeted gene blacklist is not intended to replace GWAS-level MHC filtering. Removing MHC before PRISMA reduces the risk that long-range LD structure or locus-level LD traps dominate the factorization.
+
 ## Quick Start
 
 The repository includes a tiny fully synthetic example dataset in examples/synthetic_data. To regenerate it deterministically:
