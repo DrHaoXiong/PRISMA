@@ -23,6 +23,8 @@ Public setup files:
 - NOTICE
 - CITATION.cff
 - requirements.txt
+- resources/README.md
+- resources/targeted_gene_blacklist.tsv
 - .gitignore
 - examples/data_manifest_template.csv
 - examples/generate_synthetic_example.py

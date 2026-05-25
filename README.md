@@ -93,7 +93,7 @@ A minimal Python environment is sufficient for the core engine:
 
 Optional LD reference-panel support in builder.py uses bed-reader. If no PLINK reference panel is supplied, the code falls back to an identity Laplacian within each block.
 
-If your eQTL target genes are Ensembl IDs, optional symbol-based blacklist filtering can use mygene when it is installed. This step is skipped for gene symbols and for the synthetic example data.
+If your eQTL target genes are Ensembl IDs, `mygene>=3.2` is required for manuscript-style exact filtering. PRISMA uses `mygene` to map Ensembl IDs to gene symbols before applying the targeted housekeeping-gene and 17q21.31 LD-trap filters documented in `resources/targeted_gene_blacklist.tsv`. This mapping step is skipped for gene-symbol inputs and for the synthetic example data.
 
 ## Public-Release Notes
 
