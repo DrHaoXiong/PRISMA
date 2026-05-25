@@ -1,0 +1,13 @@
+rule_type	identifier_type	identifier	rationale
+prefix	gene_symbol	RPS	Ribosomal protein small-subunit genes are excluded to reduce broadly expressed translation-related signals.
+prefix	gene_symbol	RPL	Ribosomal protein large-subunit genes are excluded to reduce broadly expressed translation-related signals.
+prefix	gene_symbol	EEF	Translation elongation factor genes are excluded to reduce broadly expressed translation-related signals.
+prefix	gene_symbol	EIF	Translation initiation factor genes are excluded to reduce broadly expressed translation-related signals.
+exact	gene_symbol	KANSL1-AS1	17q21.31 inversion-region LD-trap proxy excluded in manuscript-style filtering.
+exact	gene_symbol	ARHGAP27	17q21.31 inversion-region LD-trap proxy excluded in manuscript-style filtering.
+exact	gene_symbol	LRRC37A2	17q21.31 inversion-region LD-trap proxy excluded in manuscript-style filtering.
+exact	gene_symbol	ARL17A	17q21.31 inversion-region LD-trap proxy excluded in manuscript-style filtering.
+exact	gene_symbol	MAPT	17q21.31 inversion-region LD-trap proxy excluded in manuscript-style filtering.
+exact	gene_symbol	CRHR1	17q21.31 inversion-region LD-trap proxy excluded in manuscript-style filtering.
+exact	gene_symbol	SPPL2C	17q21.31 inversion-region LD-trap proxy excluded in manuscript-style filtering.
+exact	gene_symbol	STH	17q21.31 inversion-region LD-trap proxy excluded in manuscript-style filtering.
