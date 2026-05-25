@@ -37,6 +37,12 @@ Expected LD-block BED columns:
 
 - chr, start, stop
 
+## Genome Build Recommendation
+
+For manuscript-style analyses, we recommend using GRCh37/hg19 coordinates. The diabetic retinopathy analysis used GRCh37/hg19-aligned GWAS and eQTL inputs, LDetect European LD blocks in hg19 coordinates, and the 1000 Genomes Project Phase 3 European reference panel on the same coordinate system.
+
+PRISMA can be applied to other genome builds, but all inputs must use a consistent build. If using GRCh38/hg38 data, lift over or replace every coordinate-dependent input accordingly, including the GWAS summary statistics, eQTL files, LD-block BED file, gene-position annotations, and any optional PLINK/bed-reader LD reference panel. Mixing hg19 and hg38 resources can change LD-block assignment, SNP matching, representative selection, and downstream factor loadings.
+
 ## GWAS QC Recommendation
 
 Before running PRISMA, we recommend excluding the major histocompatibility complex (MHC) region and other known complex-LD regions from the trait GWAS summary statistics during GWAS quality control. The diabetic retinopathy manuscript analysis used an MHC-excluded GWAS input. Although the LD-block partitioner can exclude several complex-LD blocks when an appropriate LD-block BED file is supplied, the targeted gene blacklist is not intended to replace GWAS-level MHC filtering. Removing MHC before PRISMA reduces the risk that long-range LD structure or locus-level LD traps dominate the factorization.
