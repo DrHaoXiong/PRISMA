@@ -75,6 +75,8 @@ Rank exploration:
 
 The diabetic retinopathy manuscript used SMR-formatted GTEx v8 BESD files for the GTEx tissue eQTL layers. Because GTEx eQTL resources are third-party datasets subject to their original access and use terms, these eQTL files are not redistributed in this repository. Users can prepare PRISMA-formatted eQTL inputs from SMR-formatted GTEx BESD resources or from official GTEx Portal association tables using the preprocessing rules below. In our Whole Blood sensitivity analysis, replacing the SMR-derived eQTL layer with a raw GTEx-derived layer preserved the three tissue-level PRISMA axes after rank alignment, indicating that the main tissue-axis conclusions are not driven by SMR formatting.
 
+For primary analyses, we recommend selecting eQTL tissues based on prior biological relevance to the trait rather than indiscriminately including all available GTEx tissues. PRISMA can technically accept many tissue panels, but large panels with many related tissues can introduce strong tissue-mode collinearity, complicate rank selection, and make latent axes harder to interpret. A focused, trait-relevant, non-redundant tissue panel is usually preferable for formal biological interpretation.
+
 The `scripts/` folder includes a utility for converting raw GTEx eQTL association tables to PRISMA-formatted eQTL inputs:
 
     python scripts/clean_gtex_eqtl_for_prisma.py \
