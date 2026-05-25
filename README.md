@@ -7,7 +7,7 @@ This public release currently contains the core computational engine only. Raw G
 ## Core Files
 
 - run_prisma.py: main command-line entry point.
-- loader.py: GWAS/eQTL manifest loading, genomic-control scaling, allele alignment, and SMR-style summary statistic construction.
+- loader.py: GWAS/eQTL manifest loading, genomic-control scaling, allele alignment, and PRISMA GWAS-eQTL integration score construction.
 - partition.py: LD-block partitioning and block iterator.
 - builder.py: tensor and graph Laplacian construction.
 - solver.py: graph-regularized block-wise ALS solver.

@@ -91,11 +91,11 @@ class TensorDataLoader:
         Align target eQTL alleles to the reference GWAS backbone.
 
         Logic:
-        - Match: Z_MR = sign(Z_GWAS * Z_eQTL) * abs_smr
-        - Flip:  Z_MR = -sign(Z_GWAS * Z_eQTL) * abs_smr
-        - Mismatch: set the tissue-specific statistic to zero.
+        - Match: S_int = sign(Z_GWAS * Z_eQTL) * abs_score
+        - Flip:  S_int = -sign(Z_GWAS * Z_eQTL) * abs_score
+        - Mismatch: set the tissue-specific integration score to zero.
 
-        abs_smr = sqrt((Z_GWAS^2 * Z_eQTL^2) / (Z_GWAS^2 + Z_eQTL^2 + epsilon))
+        abs_score = sqrt((Z_GWAS^2 * Z_eQTL^2) / (Z_GWAS^2 + Z_eQTL^2 + epsilon))
         """
         # Join on SNP while preserving all GWAS backbone variants.
         lf_joined = lf_ref.join(lf_target, on='SNP', how='left', suffix='_target')
@@ -108,12 +108,12 @@ class TensorDataLoader:
              (pl.col('A2') == pl.col('A1_target'))).alias('flip')
         ])
 
-        # Compute SMR-style statistics.
+        # Compute PRISMA GWAS-eQTL integration scores.
         z_gwas = pl.col('GWAS_Z')
         z_eqtl = pl.col('Z_eqtl')
 
-        # Unsigned SMR-style strength.
-        abs_smr = (
+        # Unsigned integration-score strength.
+        abs_score = (
             ((z_gwas ** 2) * (z_eqtl ** 2)) /
             ((z_gwas ** 2) + (z_eqtl ** 2) + 1e-10)
         ).sqrt()
@@ -124,9 +124,9 @@ class TensorDataLoader:
         # Apply alignment: match keeps sign, flip reverses sign, mismatch is zero.
         lf_aligned = lf_aligned.with_columns([
             pl.when(pl.col('match'))
-              .then(sign_product * abs_smr)
+              .then(sign_product * abs_score)
               .when(pl.col('flip'))
-              .then(-sign_product * abs_smr)
+              .then(-sign_product * abs_score)
               .otherwise(pl.lit(0.0))
               .alias(f'{tissue_name}_Z'),
             pl.col('TARGET_GENE')
@@ -252,9 +252,9 @@ class TensorDataLoader:
 
         print(f"   Raw dimensions: {df_final.shape}")
 
-        # ===== SMR-style gene representative pruning =====
+        # ===== Gene representative pruning =====
         # Keep one SNP per target gene using the strongest cross-tissue eQTL signal.
-        # This follows the SMR convention of using a top cis-eQTL instrument.
+        # This is a PRISMA input-compression heuristic, not a formal SMR/HEIDI test.
         gene_cols = [c for c in df_final.columns if c.endswith('_GENE')]
         tissue_z_cols = [c for c in df_final.columns if c.endswith('_Z') and c != 'GWAS_Z']
 
@@ -307,7 +307,7 @@ class TensorDataLoader:
 
             n_after = len(df_final)
             self.stats['N_Gene_Representatives_PreBlacklist'] = int(n_after)
-            print(f"   SMR-style gene representative pruning: {n_before} SNPs -> {n_after} gene representatives")
+            print(f"   Gene representative pruning: {n_before} SNPs -> {n_after} gene representatives")
             print(f"   Compression rate: {(1 - n_after/n_before)*100:.1f}%")
 
             # =========================================================

@@ -27,13 +27,13 @@ class TensorBuilder:
 
     def build_tensor(self, block_df):
         """
-        Build tensor X [SNPs, Tissues, Phenotypes] from SMR-style Z-scores
+        Build tensor X [SNPs, Tissues, Phenotypes] from PRISMA integration scores
         already computed by the loader.
         """
         n_snps = len(block_df)
         X = np.zeros((n_snps, self.n_tissues, self.n_phenotypes))
 
-        # Extract SMR-style Z-scores.
+        # Extract PRISMA integration scores.
         for t_idx, t_col in enumerate(self.tissue_cols):
             X[:, t_idx, 0] = block_df[t_col].values
 
