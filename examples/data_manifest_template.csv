@@ -1,5 +1,5 @@
 type,name,path
-gwas,DR,path/to/gwas_summary.tsv
+gwas,trait,path/to/gwas_summary.tsv
 eqtl,Retina,path/to/retina_eqtl.tsv
 eqtl,Artery,path/to/artery_tibial_eqtl.tsv
 eqtl,Cortex,path/to/brain_cortex_eqtl.tsv

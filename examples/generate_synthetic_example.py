@@ -122,7 +122,7 @@ def generate_synthetic_example(out_dir: Path, seed: int = 20260515, n_snps: int 
 
     manifest_rows = [{
         "type": "gwas",
-        "name": "Synthetic_DR",
+        "name": "synthetic_trait",
         "path": str(rel_out / "synthetic_dr_gwas.tsv").replace("\\", "/"),
     }]
     for tissue, path in eqtl_paths:

@@ -1,5 +1,5 @@
 type,name,path
-gwas,Synthetic_DR,examples/synthetic_data/synthetic_dr_gwas.tsv
+gwas,synthetic_trait,examples/synthetic_data/synthetic_dr_gwas.tsv
 eqtl,Retina,examples/synthetic_data/synthetic_retina_eqtl.tsv
 eqtl,Artery,examples/synthetic_data/synthetic_artery_eqtl.tsv
 eqtl,Blood,examples/synthetic_data/synthetic_blood_eqtl.tsv

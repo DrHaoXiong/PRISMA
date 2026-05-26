@@ -27,6 +27,11 @@ figures/
 !examples/synthetic_data/*.csv
 !examples/synthetic_data/*.tsv
 !examples/synthetic_data/*.bed
+!examples/mini_fixture_1000/
+!examples/mini_fixture_1000/*.csv
+!examples/mini_fixture_1000/*.tsv
+!examples/mini_fixture_1000/*.bed
+!examples/mini_fixture_1000/*.md
 !resources/
 !resources/*.tsv
 

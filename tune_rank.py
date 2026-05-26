@@ -3,12 +3,14 @@ import numpy as np
 import pandas as pd
 import argparse
 import os
+import json
 from scipy.linalg import khatri_rao
 
 from loader import TensorDataLoader
 from partition import GenomicPartitioner
 from builder import TensorBuilder
 from solver import CoupledTensorSolver
+from qc import resolve_input_path
 
 def print_project_banner():
     banner = """
@@ -112,7 +114,101 @@ def compute_corcondia(X, A, B, C):
     corcondia = 100 * (1 - (diff_norm ** 2) / (super_norm ** 2 + 1e-12))
     return corcondia
 
-def run_tuning(manifest_path, bed_path, max_rank=10, seed=42):
+
+def _elbow_rank(ranks, fits):
+    if len(ranks) < 3:
+        return ranks[int(np.argmax(fits))]
+    diffs = np.diff(fits)
+    second_diffs = np.diff(diffs)
+    if len(second_diffs) == 0:
+        return ranks[int(np.argmax(fits))]
+    # The largest negative change in slope marks a simple variance-explained elbow.
+    return ranks[int(np.argmin(second_diffs) + 1)]
+
+
+def select_rank(
+    partitioner,
+    builder,
+    block_defs,
+    n_tissues,
+    n_phenos,
+    max_rank=5,
+    corcondia_threshold=80.0,
+    rank_seed=0,
+    max_iter=5,
+    out_dir=None,
+):
+    """
+    Shared PRISMA rank-selection routine used by run_prisma.py and tune_rank.py.
+    """
+    if rank_seed >= 0:
+        np.random.seed(rank_seed)
+
+    ranks = list(range(1, int(max_rank) + 1))
+    fits = []
+    concordias = []
+
+    for r in ranks:
+        print(f"\n[INFO] Evaluating Rank = {r} ...")
+        solver = CoupledTensorSolver(n_tissues, n_phenos, rank=r, max_iter=max_iter)
+        B, C = solver.train(partitioner, builder, block_defs)
+
+        local_As = []
+        corcondia_scores = []
+        for _, block_df in partitioner.iter_blocks(block_defs):
+            X_i = builder.build_tensor(block_df)
+            L_i = builder.build_laplacian(block_df)
+            A_i, _ = solver.solve_local_A(X_i, L_i)
+            local_As.append(A_i)
+            corcondia_scores.append(compute_corcondia(X_i, A_i, B, C))
+
+        fit = calculate_fit(partitioner, builder, block_defs, B, C, local_As)
+        avg_corcondia = float(np.mean(corcondia_scores)) if corcondia_scores else float("nan")
+        fits.append(float(fit))
+        concordias.append(avg_corcondia)
+        print(f"   Rank {r} -> Fit: {fit:.4f}, CORCONDIA: {avg_corcondia:.2f}%")
+
+    passing = [
+        idx for idx, (rank_value, corcondia) in enumerate(zip(ranks, concordias))
+        if rank_value > 1 and corcondia >= corcondia_threshold
+    ]
+    if passing:
+        selected_idx = passing[0]
+        selection_rule = (
+            f"selected lowest non-trivial rank with CORCONDIA >= {corcondia_threshold:.1f}%"
+        )
+        fallback_used = False
+    else:
+        selected_rank_fallback = _elbow_rank(ranks, fits)
+        selected_idx = ranks.index(selected_rank_fallback)
+        selection_rule = "variance-explained elbow fallback because no rank passed CORCONDIA threshold"
+        fallback_used = True
+
+    selected_rank = int(ranks[selected_idx])
+    diagnostics = pd.DataFrame({
+        "Rank": ranks,
+        "Variance_Explained": fits,
+        "CORCONDIA": concordias,
+    })
+    selection = {
+        "candidate_ranks": ranks,
+        "selected_rank": selected_rank,
+        "selection_rule": selection_rule,
+        "corcondia_threshold": float(corcondia_threshold),
+        "corcondia_values": concordias,
+        "fit_values": fits,
+        "fallback_used": fallback_used,
+    }
+
+    if out_dir is not None:
+        os.makedirs(out_dir, exist_ok=True)
+        diagnostics.to_csv(os.path.join(out_dir, "rank_diagnostics.csv"), index=False)
+        with open(os.path.join(out_dir, "rank_selection.json"), "w", encoding="utf-8") as handle:
+            json.dump(selection, handle, indent=2, sort_keys=True)
+
+    return selected_rank, diagnostics, selection
+
+def run_tuning(manifest_path, bed_path, max_rank=10, seed=42, corcondia_threshold=80.0, out_dir="results"):
     """
     Main automatic rank-tuning workflow.
     """
@@ -143,48 +239,23 @@ def run_tuning(manifest_path, bed_path, max_rank=10, seed=42):
     builder.gwas_z_col = gwas_z_col
     builder.tissue_cols = tissue_cols
 
-    # 4. Scan rank values.
-    fits = []
-    concordias = []
-    ranks = range(1, max_rank + 1)
-
-    for r in ranks:
-        print(f"\n[INFO] Evaluating Rank = {r} ...")
-
-        solver = CoupledTensorSolver(n_tissues, n_phenos, rank=r, max_iter=5)
-        B, C = solver.train(partitioner, builder, block_defs)
-
-        local_As = []
-        corcondia_scores = []
-
-        for _, block_df in partitioner.iter_blocks(block_defs):
-            X_i = builder.build_tensor(block_df)
-            L_i = builder.build_laplacian(block_df)
-            A_i, _ = solver.solve_local_A(X_i, L_i)
-            local_As.append(A_i)
-
-            corcondia = compute_corcondia(X_i, A_i, B, C)
-            corcondia_scores.append(corcondia)
-
-        fit = calculate_fit(partitioner, builder, block_defs, B, C, local_As)
-        avg_corcondia = np.mean(corcondia_scores)
-
-        print(f"   Rank {r} -> Fit: {fit:.4f}, CORCONDIA: {avg_corcondia:.2f}%")
-        fits.append(fit)
-        concordias.append(avg_corcondia)
-
-    rank_values = list(ranks)
-    valid_indices = [
-        idx for idx, (rank_value, corcondia) in enumerate(zip(rank_values, concordias))
-        if rank_value > 1 and corcondia >= 80
-    ]
-    if valid_indices:
-        selected_idx = valid_indices[0]
-        selection_note = "selected as the smallest non-trivial rank with CORCONDIA >= 80%"
-    else:
-        selected_idx = int(np.argmax(concordias))
-        selection_note = "selected as the highest-CORCONDIA rank because no rank reached 80%"
-    selected_rank = rank_values[selected_idx]
+    selected_rank, results_df, selection = select_rank(
+        partitioner,
+        builder,
+        block_defs,
+        n_tissues,
+        n_phenos,
+        max_rank=max_rank,
+        corcondia_threshold=corcondia_threshold,
+        rank_seed=seed,
+        max_iter=5,
+        out_dir=out_dir,
+    )
+    ranks = list(results_df["Rank"])
+    fits = list(results_df["Variance_Explained"])
+    concordias = list(results_df["CORCONDIA"])
+    selected_idx = ranks.index(selected_rank)
+    selection_note = selection["selection_rule"]
 
     # 5. Plot rank-selection diagnostics.
     import matplotlib
@@ -250,21 +321,15 @@ def run_tuning(manifest_path, bed_path, max_rank=10, seed=42):
                  fontsize=11, fontweight='bold', y=1.00)
 
     plt.tight_layout()
-    os.makedirs('figures', exist_ok=True)
-    plt.savefig('figures/rank_selection.png', dpi=300, bbox_inches='tight')
-    plt.savefig('figures/rank_selection.pdf', dpi=300, bbox_inches='tight')
-    print("\n[INFO] Figure saved: figures/rank_selection.png")
-    print("[INFO] Figure saved: figures/rank_selection.pdf")
+    os.makedirs(out_dir, exist_ok=True)
+    plt.savefig(os.path.join(out_dir, 'rank_selection.png'), dpi=300, bbox_inches='tight')
+    plt.savefig(os.path.join(out_dir, 'rank_selection.pdf'), dpi=300, bbox_inches='tight')
+    print(f"\n[INFO] Figure saved: {os.path.join(out_dir, 'rank_selection.png')}")
+    print(f"[INFO] Figure saved: {os.path.join(out_dir, 'rank_selection.pdf')}")
 
     # 6. Save rank-selection data.
-    results_df = pd.DataFrame({
-        'Rank': list(ranks),
-        'Variance_Explained': fits,
-        'CORCONDIA': concordias
-    })
-    os.makedirs('results', exist_ok=True)
-    results_df.to_csv('results/Rank_Selection_Results.csv', index=False)
-    print("[INFO] Data saved: results/Rank_Selection_Results.csv")
+    results_df.to_csv(os.path.join(out_dir, 'Rank_Selection_Results.csv'), index=False)
+    print(f"[INFO] Data saved: {os.path.join(out_dir, 'Rank_Selection_Results.csv')}")
     print("\nRank Selection Results:")
     print(results_df.to_string(index=False))
     print(f"\n[INFO] Selected Rank: R={selected_rank} ({selection_note}).")
@@ -276,6 +341,8 @@ if __name__ == "__main__":
     parser.add_argument("--manifest", required=True, help="Input data manifest CSV.")
     parser.add_argument("--bed", required=True, help="LD block BED file.")
     parser.add_argument("--max_rank", type=int, default=10, help="Maximum rank to evaluate.")
+    parser.add_argument("--corcondia-threshold", type=float, default=80.0, help="CORCONDIA threshold for automatic rank selection.")
+    parser.add_argument("--out", default="results", help="Output directory for rank diagnostics.")
     parser.add_argument("--no_banner", action="store_true", help="Suppress the PRISMA startup banner.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for solver initialization. Use a negative value to leave it unset.")
     args = parser.parse_args()
@@ -286,5 +353,6 @@ if __name__ == "__main__":
     manifest_df = pd.read_csv(args.manifest)
     bed_rows = manifest_df[manifest_df['type'] == 'bed']
     bed_path = bed_rows.iloc[0]['path'] if len(bed_rows) > 0 else args.bed
+    bed_path = resolve_input_path(bed_path, args.manifest)
 
-    run_tuning(args.manifest, bed_path, args.max_rank, args.seed)
+    run_tuning(args.manifest, bed_path, args.max_rank, args.seed, args.corcondia_threshold, args.out)

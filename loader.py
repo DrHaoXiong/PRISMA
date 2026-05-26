@@ -2,6 +2,17 @@ import polars as pl
 import pandas as pd
 import numpy as np
 import os
+from pathlib import Path
+
+
+def _resolve_manifest_path(path_value, manifest_path):
+    path = Path(str(path_value))
+    if path.exists():
+        return str(path)
+    candidate = Path(manifest_path).resolve().parent / path
+    if candidate.exists():
+        return str(candidate)
+    return str(path)
 
 class DataLoader:
     """
@@ -54,6 +65,11 @@ class TensorDataLoader:
             raise FileNotFoundError(f"Manifest file does not exist: {manifest_path}")
 
         self.manifest = pd.read_csv(manifest_path)
+        if 'path' in self.manifest.columns:
+            self.manifest['path'] = [
+                _resolve_manifest_path(path_value, manifest_path)
+                for path_value in self.manifest['path']
+            ]
         self.stats = {}
         print(f"[INFO] Reading data manifest: {manifest_path}")
         print(f"       Found {len(self.manifest)} data files.")
@@ -284,7 +300,7 @@ class TensorDataLoader:
                 print(f"   Removed residual invalid rows: {len(df_final)} rows remain")
 
             df_final = df_final.with_columns(
-                pl.Series('_consensus_gene', consensus_gene.values)
+                pl.Series('_consensus_gene', consensus_gene.astype(str).tolist())
             )
 
             # Step 2: cross-tissue composite eQTL strength = max(|Z_tissue|).

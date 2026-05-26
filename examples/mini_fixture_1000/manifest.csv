@@ -1,0 +1,6 @@
+type,name,path
+gwas,synthetic_trait,examples/mini_fixture_1000/gwas.tsv
+eqtl,retina,examples/mini_fixture_1000/eqtl_retina.tsv
+eqtl,blood,examples/mini_fixture_1000/eqtl_blood.tsv
+eqtl,artery,examples/mini_fixture_1000/eqtl_artery.tsv
+bed,synthetic_ld_blocks,examples/mini_fixture_1000/ld_blocks_header.bed
