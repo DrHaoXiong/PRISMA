@@ -47,9 +47,7 @@ class TensorBuilder:
                 self._snp_map = {snp: idx for idx, snp in enumerate(bim_df[1].values)}
                 print(f"[INFO] Loaded PLINK BIM SNP map: {len(self._snp_map)} variants from {bim_file}")
             except Exception as e:
-                print(f"[WARNING] Could not read .bim file: {e}. Falling back to an identity matrix.")
-                self.bfile_path = None
-                self.laplacian_stats["bfile_path"] = None
+                raise ValueError(f"Could not read PLINK .bim file for LD reference: {bim_file}") from e
 
     def get_reference_overlap_count(self, snp_list):
         if self._snp_map is None:
@@ -138,10 +136,7 @@ class TensorBuilder:
                 except Exception:
                     G = bed.read(index=found_indices)
         except Exception as e:
-            print(f"[WARNING] Could not read .bed file: {e}. Falling back to an identity matrix.")
-            self.laplacian_stats["n_blocks_identity_laplacian"] += 1
-            self.laplacian_stats["last_block_modes"].append("identity_read_failure")
-            return L
+            raise ValueError(f"Could not read PLINK .bed file for LD reference: {bed_file}") from e
 
         # Mean-impute missing genotypes.
         col_means = np.nanmean(G, axis=0)

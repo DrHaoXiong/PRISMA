@@ -27,6 +27,8 @@ def test_cli_smoke_mini_fixture_outputs(tmp_path):
         "Factor_C_Phenotypes.csv",
         "qc_report.json",
         "qc_summary.csv",
+        "qc_report.tsv",
+        "qc_report.txt",
         "rank_diagnostics.csv",
         "rank_selection.json",
     ]:

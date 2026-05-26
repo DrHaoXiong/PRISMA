@@ -128,12 +128,15 @@ Modes:
 
 - `--ld-reference-mode plink`: require `--bfile` and construct empirical LD
   graphs where SNP overlap is sufficient.
-- `--ld-reference-mode auto`: use `--bfile` when supplied; otherwise use
-  identity Laplacians with a strong warning.
+- `--ld-reference-mode auto`: use `--bfile` when supplied. Without `--bfile`,
+  identity Laplacians are allowed only for bundled `examples/` or `tests/`
+  manifests, or when `--allow-identity-ld` is explicitly supplied.
 - `--ld-reference-mode identity --allow-identity-ld`: force identity Laplacians.
   This is intended for synthetic smoke tests and diagnostics only.
 
-Identity Laplacian mode does not reproduce the LD-aware manuscript model.
+Real-data analyses should provide `--bfile` for LD-aware PRISMA. Identity
+Laplacian mode is diagnostic and does not reproduce the LD-aware manuscript
+model.
 
 ## QC Reports
 

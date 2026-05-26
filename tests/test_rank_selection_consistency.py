@@ -1,5 +1,9 @@
 import numpy as np
 import pandas as pd
+import json
+import subprocess
+import sys
+from pathlib import Path
 
 from builder import TensorBuilder
 from partition import GenomicPartitioner
@@ -29,3 +33,61 @@ def test_select_rank_is_deterministic_for_same_seed(tmp_path):
     p2, b2, blocks2 = _small_rank_inputs()
     r2, _, _ = select_rank(p2, b2, blocks2, 2, 1, max_rank=3, rank_seed=7, max_iter=1, out_dir=tmp_path / "b")
     assert r1 == r2
+
+
+def test_run_prisma_auto_rank_matches_tune_rank_cli(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    subprocess.run([sys.executable, str(repo / "examples" / "generate_mini_fixture_1000.py")], cwd=repo, check=True)
+
+    run_out = tmp_path / "run_prisma_auto"
+    tune_out = tmp_path / "tune_rank"
+    subprocess.run(
+        [
+            sys.executable,
+            str(repo / "run_prisma.py"),
+            "--manifest",
+            "examples/mini_fixture_1000/manifest.csv",
+            "--out",
+            str(run_out),
+            "--rank",
+            "auto",
+            "--max-rank",
+            "3",
+            "--rank-seed",
+            "11",
+            "--phenotype-name",
+            "synthetic_trait",
+            "--ld-reference-mode",
+            "identity",
+            "--allow-identity-ld",
+            "--iter",
+            "1",
+            "--no_banner",
+            "--quiet-blocks",
+        ],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            str(repo / "tune_rank.py"),
+            "--manifest",
+            "examples/mini_fixture_1000/manifest.csv",
+            "--bed",
+            "examples/mini_fixture_1000/ld_blocks_header.bed",
+            "--max_rank",
+            "3",
+            "--rank-seed",
+            "11",
+            "--out",
+            str(tune_out),
+            "--no_banner",
+        ],
+        cwd=repo,
+        check=True,
+    )
+
+    run_selection = json.loads((run_out / "rank_selection.json").read_text(encoding="utf-8"))
+    tune_selection = json.loads((tune_out / "rank_selection.json").read_text(encoding="utf-8"))
+    assert run_selection["selected_rank"] == tune_selection["selected_rank"]

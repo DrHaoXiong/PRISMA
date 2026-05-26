@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import platform
+from pathlib import Path
 try:
     import resource
 except ImportError:
@@ -17,6 +18,20 @@ from builder import TensorBuilder
 from solver import CoupledTensorSolver
 from tune_rank import select_rank
 from qc import initialize_qc_report, add_tensor_and_ld_qc, print_qc_summary, resolve_input_path
+
+IDENTITY_LD_MESSAGE = (
+    "Identity Laplacian was requested or implied without an empirical LD reference. "
+    "For real-data analyses, provide --bfile with --ld-reference-mode plink/auto. "
+    "To intentionally run diagnostic identity-LD mode, rerun with "
+    "--ld-reference-mode identity --allow-identity-ld."
+)
+
+
+def manifest_allows_auto_identity(manifest_path):
+    """Allow auto identity-LD only for bundled examples or tests."""
+    parts = {part.lower() for part in Path(manifest_path).resolve().parts}
+    return "examples" in parts or "tests" in parts
+
 
 def print_project_banner():
     banner = """
@@ -83,21 +98,35 @@ def main():
         os.environ['PRISMA_QUIET_BLOCKS'] = '1'
 
     # Resolve LD-reference mode early.
+    identity_ld_active = False
+    identity_ld_reason = None
     if args.ld_reference_mode == "plink" and not args.bfile:
         print("[ERROR] --ld-reference-mode plink requires --bfile.")
         sys.exit(1)
     if args.ld_reference_mode == "identity" and not args.allow_identity_ld:
-        print("[ERROR] --ld-reference-mode identity requires --allow-identity-ld.")
+        print(f"[ERROR] {IDENTITY_LD_MESSAGE}")
         sys.exit(1)
     bfile_path = args.bfile if args.ld_reference_mode in {"plink", "auto"} and args.bfile else None
     if bfile_path is None:
         if args.ld_reference_mode == "auto":
-            print(
-                "[WARNING] No --bfile supplied; PRISMA will use identity Laplacians. "
-                "This is suitable for synthetic smoke tests but does not reproduce LD-aware manuscript analyses."
-            )
+            if args.allow_identity_ld:
+                identity_ld_active = True
+                identity_ld_reason = "explicit_allow_identity_ld"
+                print(f"[WARNING] {IDENTITY_LD_MESSAGE}")
+            elif manifest_allows_auto_identity(args.manifest):
+                identity_ld_active = True
+                identity_ld_reason = "examples_or_tests_manifest"
+                print(
+                    f"[WARNING] {IDENTITY_LD_MESSAGE} "
+                    "Proceeding because the manifest is under examples/ or tests/."
+                )
+            else:
+                print(f"[ERROR] {IDENTITY_LD_MESSAGE}")
+                sys.exit(1)
         elif args.ld_reference_mode == "identity":
-            print("[WARNING] Identity Laplacian mode explicitly requested.")
+            identity_ld_active = True
+            identity_ld_reason = "explicit_identity_mode"
+            print(f"[WARNING] {IDENTITY_LD_MESSAGE}")
     else:
         missing_plink = [f"{bfile_path}{suffix}" for suffix in [".bed", ".bim", ".fam"] if not os.path.exists(f"{bfile_path}{suffix}")]
         if missing_plink:
@@ -174,7 +203,11 @@ def main():
             "ld_reference_mode": args.ld_reference_mode,
             "bfile": bfile_path,
             "allow_identity_ld": bool(args.allow_identity_ld),
+            "identity_ld_active": bool(identity_ld_active),
+            "identity_ld_reason": identity_ld_reason,
         }
+        if identity_ld_active:
+            qc_report.setdefault("warnings", []).append(IDENTITY_LD_MESSAGE)
         qc_report = add_tensor_and_ld_qc(
             qc_report,
             df,

@@ -344,7 +344,7 @@ if __name__ == "__main__":
     parser.add_argument("--corcondia-threshold", type=float, default=80.0, help="CORCONDIA threshold for automatic rank selection.")
     parser.add_argument("--out", default="results", help="Output directory for rank diagnostics.")
     parser.add_argument("--no_banner", action="store_true", help="Suppress the PRISMA startup banner.")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for solver initialization. Use a negative value to leave it unset.")
+    parser.add_argument("--seed", "--rank-seed", dest="seed", type=int, default=42, help="Random seed for rank selection. Use a negative value to leave it unset.")
     args = parser.parse_args()
 
     if not args.no_banner:
