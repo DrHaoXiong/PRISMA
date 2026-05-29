@@ -219,4 +219,8 @@ PRISMA is research software and is not intended for clinical diagnosis or treatm
 
 ## Citation
 
-If you use PRISMA, please cite the accompanying manuscript/preprint once available.
+If you use PRISMA, please cite the accompanying bioRxiv preprint:
+
+Xiong H, Xu W, Ji A, Zhong L, Liu S, Xie Z, Yan J, Wu Z. PRISMA: A tensor-based framework for deconstructing the genetic architecture of complex diseases, with application to diabetic retinopathy. bioRxiv. 2026. doi: [10.64898/2026.05.25.727382](https://doi.org/10.64898/2026.05.25.727382).
+
+Preprint URL: https://www.biorxiv.org/content/10.64898/2026.05.25.727382v1

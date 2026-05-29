@@ -1,6 +1,46 @@
 cff-version: 1.2.0
-message: "If you use PRISMA, please cite the accompanying manuscript/preprint once available."
+message: "If you use PRISMA, please cite the accompanying bioRxiv preprint."
 title: "PRISMA: Polygenic Risk Integration via Summary-statistics Multi-tissue Array-decomposition"
 license: Apache-2.0
 authors:
-  - name: "PRISMA contributors"
+  - family-names: Xiong
+    given-names: Hao
+  - family-names: Xu
+    given-names: Wenbin
+  - family-names: Ji
+    given-names: Aocheng
+  - family-names: Zhong
+    given-names: Li
+  - family-names: Liu
+    given-names: Siyan
+  - family-names: Xie
+    given-names: Ziwei
+  - family-names: Yan
+    given-names: Jing
+  - family-names: Wu
+    given-names: Zhengzheng
+preferred-citation:
+  type: article
+  title: "PRISMA: A tensor-based framework for deconstructing the genetic architecture of complex diseases, with application to diabetic retinopathy"
+  authors:
+    - family-names: Xiong
+      given-names: Hao
+    - family-names: Xu
+      given-names: Wenbin
+    - family-names: Ji
+      given-names: Aocheng
+    - family-names: Zhong
+      given-names: Li
+    - family-names: Liu
+      given-names: Siyan
+    - family-names: Xie
+      given-names: Ziwei
+    - family-names: Yan
+      given-names: Jing
+    - family-names: Wu
+      given-names: Zhengzheng
+  journal: "bioRxiv"
+  year: 2026
+  date-released: 2026-05-25
+  doi: "10.64898/2026.05.25.727382"
+  url: "https://www.biorxiv.org/content/10.64898/2026.05.25.727382v1"
