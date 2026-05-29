@@ -1,8 +1,19 @@
 # PRISMA
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20340998.svg)](https://doi.org/10.5281/zenodo.20340998)
+
 PRISMA (Polygenic Risk Integration via Summary-statistics Multi-tissue Array-decomposition) decomposes GWAS summary statistics and multi-tissue eQTL evidence into interpretable tissue-anchored polygenic axes.
 
 This public release currently contains the core computational engine only. Raw GWAS/eQTL files, single-cell data, vitreous proteomics/metabolomics data, manuscript figures, intermediate results, and deprecated exploratory scripts are intentionally excluded.
+
+## Reproducibility Data Package
+
+The derived data and reproducibility materials accompanying the PRISMA diabetic retinopathy manuscript are available on Zenodo:
+
+- [PRISMA diabetic retinopathy derived data and reproducibility package](https://doi.org/10.5281/zenodo.20340998)
+- DOI: `10.5281/zenodo.20340998`
+
+The Zenodo package contains author-generated derived data, supplementary tables, supplementary data, supplementary notes, and checksums. It does not redistribute restricted raw eQTL files, raw single-cell matrices, individual-level genotype/phenotype data, or controlled-access data.
 
 ## Core Files
 

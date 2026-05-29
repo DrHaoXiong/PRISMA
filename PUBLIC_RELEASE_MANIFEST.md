@@ -38,6 +38,16 @@ Public setup files:
 - scripts_pro_validation/, scripts_scrna/, scripts_plotting/, and most validation/downstream scripts: many contain local manuscript paths, real-data dependencies, or project-specific output assumptions and should be sanitized before any later public release.
 - Homo_sapiens.GRCh38.110.entrez.tsv.gz: external annotation file; omit until license/source metadata are documented.
 
+## Companion Data Package
+
+The manuscript-associated derived data and reproducibility materials are distributed separately on Zenodo:
+
+- PRISMA diabetic retinopathy derived data and reproducibility package
+- DOI: `10.5281/zenodo.20340998`
+- URL: https://doi.org/10.5281/zenodo.20340998
+
+This Zenodo package is a companion reproducibility package, not a mirror of this public source-code repository. It contains author-generated derived data, supplementary tables, supplementary data, supplementary notes, and checksums, while restricted raw GWAS/eQTL inputs, raw single-cell matrices, individual-level data, and controlled-access resources remain excluded.
+
 ## Recommended Next Step
 
 After reviewing this minimal public core, create a second pass for sanitized examples, synthetic test data, and manuscript-reproducibility scripts.
