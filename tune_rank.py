@@ -4,13 +4,64 @@ import pandas as pd
 import argparse
 import os
 import json
+import sys
+from pathlib import Path
 from scipy.linalg import khatri_rao
 
 from loader import TensorDataLoader
 from partition import GenomicPartitioner
 from builder import TensorBuilder
 from solver import CoupledTensorSolver
-from qc import resolve_input_path
+from qc import initialize_qc_report, add_tensor_and_ld_qc, print_qc_summary, resolve_input_path
+
+IDENTITY_LD_MESSAGE = (
+    "Identity Laplacian was requested or implied without an empirical LD reference. "
+    "For real-data rank tuning, provide --bfile with --ld-reference-mode plink/auto. "
+    "To intentionally run diagnostic identity-LD rank tuning, rerun with "
+    "--ld-reference-mode identity --allow-identity-ld."
+)
+
+
+def manifest_allows_auto_identity(manifest_path):
+    """Allow auto identity-LD only for bundled examples or tests."""
+    parts = {part.lower() for part in Path(manifest_path).resolve().parts}
+    return "examples" in parts or "tests" in parts
+
+
+def resolve_ld_reference(args):
+    """Apply the same identity-LD policy used by run_prisma.py."""
+    identity_ld_active = False
+    identity_ld_reason = None
+    if args.ld_reference_mode == "plink" and not args.bfile:
+        raise ValueError("--ld-reference-mode plink requires --bfile.")
+    if args.ld_reference_mode == "identity" and not args.allow_identity_ld:
+        raise ValueError(IDENTITY_LD_MESSAGE)
+
+    bfile_path = args.bfile if args.ld_reference_mode in {"plink", "auto"} and args.bfile else None
+    if bfile_path is None:
+        if args.ld_reference_mode == "auto":
+            if args.allow_identity_ld:
+                identity_ld_active = True
+                identity_ld_reason = "explicit_allow_identity_ld"
+                print(f"[WARNING] {IDENTITY_LD_MESSAGE}")
+            elif manifest_allows_auto_identity(args.manifest):
+                identity_ld_active = True
+                identity_ld_reason = "examples_or_tests_manifest"
+                print(
+                    f"[WARNING] {IDENTITY_LD_MESSAGE} "
+                    "Proceeding because the manifest is under examples/ or tests/."
+                )
+            else:
+                raise ValueError(IDENTITY_LD_MESSAGE)
+        elif args.ld_reference_mode == "identity":
+            identity_ld_active = True
+            identity_ld_reason = "explicit_identity_mode"
+            print(f"[WARNING] {IDENTITY_LD_MESSAGE}")
+    else:
+        missing_plink = [f"{bfile_path}{suffix}" for suffix in [".bed", ".bim", ".fam"] if not os.path.exists(f"{bfile_path}{suffix}")]
+        if missing_plink:
+            raise FileNotFoundError(f"Missing PLINK reference files: {missing_plink}")
+    return bfile_path, identity_ld_active, identity_ld_reason
 
 def print_project_banner():
     banner = """
@@ -208,18 +259,65 @@ def select_rank(
 
     return selected_rank, diagnostics, selection
 
-def run_tuning(manifest_path, bed_path, max_rank=10, seed=42, corcondia_threshold=80.0, out_dir="results"):
+def run_tuning(
+    manifest_path,
+    bed_path,
+    max_rank=10,
+    seed=42,
+    corcondia_threshold=80.0,
+    out_dir="results",
+    bfile_path=None,
+    ld_reference_mode="auto",
+    ld_min_overlap=2,
+    quiet_blocks=False,
+    allow_identity_ld=False,
+    identity_ld_active=False,
+    identity_ld_reason=None,
+    gene_pruning_mode="strongest",
+    gene_pruning_top_k=1,
+    require_mygene_for_ensembl=False,
+    tissue_nonzero_warning=0.01,
+    tissue_nonzero_fail=0.001,
+    allow_low_tissue_nonzero=False,
+    ld_coverage_warning=0.80,
+    ld_coverage_fail=0.50,
+    allow_low_coverage=False,
+    block_assignment_warning=0.99,
+    block_assignment_fail=0.95,
+    allow_low_block_assignment=False,
+    allele_match_warning=0.90,
+    allele_match_fail=0.70,
+    allow_low_allele_match=False,
+    allow_over_rank=False,
+):
     """
     Main automatic rank-tuning workflow.
     """
     if seed >= 0:
         np.random.seed(seed)
 
+    os.makedirs(out_dir, exist_ok=True)
+    if quiet_blocks:
+        os.environ["PRISMA_QUIET_BLOCKS"] = "1"
+
     print(f"[INFO] Starting automatic rank tuning (Rank 1 - {max_rank})...")
 
     # 1. Load data.
     print("[INFO] Loading input data...")
-    loader = TensorDataLoader(manifest_path, apply_genomic_control=True)
+    qc_report = initialize_qc_report(
+        manifest_path,
+        out_dir,
+        allele_match_warning=allele_match_warning,
+        allele_match_fail=allele_match_fail,
+        allow_low_allele_match=allow_low_allele_match,
+    )
+    loader = TensorDataLoader(
+        manifest_path,
+        apply_genomic_control=True,
+        gene_pruning_mode=gene_pruning_mode,
+        gene_pruning_top_k=gene_pruning_top_k,
+        require_mygene_for_ensembl=require_mygene_for_ensembl,
+    )
     df = loader.load_and_align()
 
     # 2. Infer dimensions.
@@ -235,9 +333,63 @@ def run_tuning(manifest_path, bed_path, max_rank=10, seed=42, corcondia_threshol
     partitioner = GenomicPartitioner(df)
     block_defs = partitioner.load_block_definitions(bed_path)
 
-    builder = TensorBuilder(n_tissues, n_phenos)
+    builder = TensorBuilder(
+        n_tissues,
+        n_phenos,
+        bfile_path=bfile_path,
+        ld_reference_mode=ld_reference_mode,
+        ld_min_overlap=ld_min_overlap,
+        quiet_blocks=quiet_blocks,
+    )
     builder.gwas_z_col = gwas_z_col
     builder.tissue_cols = tissue_cols
+
+    qc_report["run_configuration"] = {
+        "rank_tuning": True,
+        "ld_reference_mode": ld_reference_mode,
+        "bfile": bfile_path,
+        "allow_identity_ld": bool(allow_identity_ld),
+        "identity_ld_active": bool(identity_ld_active),
+        "identity_ld_reason": identity_ld_reason,
+        "gene_pruning_mode": gene_pruning_mode,
+        "gene_pruning_top_k": int(gene_pruning_top_k),
+        "block_assignment_warning": float(block_assignment_warning),
+        "block_assignment_fail": float(block_assignment_fail),
+        "allow_low_block_assignment": bool(allow_low_block_assignment),
+        "require_mygene_for_ensembl": bool(require_mygene_for_ensembl),
+        "allow_over_rank": bool(allow_over_rank),
+    }
+    if identity_ld_active:
+        qc_report.setdefault("warnings", []).append(IDENTITY_LD_MESSAGE)
+    qc_report = add_tensor_and_ld_qc(
+        qc_report,
+        df,
+        tissue_cols,
+        block_defs,
+        partitioner,
+        builder,
+        out_dir,
+        loader_stats=loader.stats,
+        tissue_nonzero_warning=tissue_nonzero_warning,
+        tissue_nonzero_fail=tissue_nonzero_fail,
+        allow_low_tissue_nonzero=allow_low_tissue_nonzero,
+        ld_coverage_warning=ld_coverage_warning,
+        ld_coverage_fail=ld_coverage_fail,
+        allow_low_coverage=allow_low_coverage,
+        block_assignment_warning=block_assignment_warning,
+        block_assignment_fail=block_assignment_fail,
+        allow_low_block_assignment=allow_low_block_assignment,
+    )
+    print_qc_summary(qc_report)
+
+    effective_max_rank = int(max_rank)
+    if effective_max_rank > n_tissues and not allow_over_rank:
+        print(
+            f"[WARNING] --max_rank {effective_max_rank} exceeds the number of tissue columns "
+            f"({n_tissues}); capping automatic rank search at {n_tissues}. Use "
+            "--allow-over-rank to scan higher ranks intentionally."
+        )
+        effective_max_rank = n_tissues
 
     selected_rank, results_df, selection = select_rank(
         partitioner,
@@ -245,7 +397,7 @@ def run_tuning(manifest_path, bed_path, max_rank=10, seed=42, corcondia_threshol
         block_defs,
         n_tissues,
         n_phenos,
-        max_rank=max_rank,
+        max_rank=effective_max_rank,
         corcondia_threshold=corcondia_threshold,
         rank_seed=seed,
         max_iter=5,
@@ -345,14 +497,72 @@ if __name__ == "__main__":
     parser.add_argument("--out", default="results", help="Output directory for rank diagnostics.")
     parser.add_argument("--no_banner", action="store_true", help="Suppress the PRISMA startup banner.")
     parser.add_argument("--seed", "--rank-seed", dest="seed", type=int, default=42, help="Random seed for rank selection. Use a negative value to leave it unset.")
+    parser.add_argument("--bfile", default=None, help="PLINK binary reference prefix, expecting .bed/.bim/.fam.")
+    parser.add_argument("--ld-reference-mode", choices=["plink", "identity", "auto"], default="auto", help="LD reference mode.")
+    parser.add_argument("--allow-identity-ld", action="store_true", help="Allow identity Laplacian mode for synthetic or diagnostic rank tuning.")
+    parser.add_argument("--quiet-blocks", action="store_true", help="Suppress per-block logs while preserving summary QC.")
+    parser.add_argument("--ld-min-overlap", type=int, default=2, help="Minimum SNP overlap per LD block for empirical LD construction.")
+    parser.add_argument("--ld-coverage-warning", type=float, default=0.80, help="Warning threshold for LD reference SNP coverage.")
+    parser.add_argument("--ld-coverage-fail", type=float, default=0.50, help="Fail threshold for LD reference SNP coverage.")
+    parser.add_argument("--allow-low-coverage", action="store_true", help="Continue despite low LD reference coverage.")
+    parser.add_argument("--block-assignment-warning", type=float, default=0.99, help="Warning threshold for the fraction of tensor SNPs assigned to LD blocks.")
+    parser.add_argument("--block-assignment-fail", type=float, default=0.95, help="Fail threshold for the fraction of tensor SNPs assigned to LD blocks.")
+    parser.add_argument("--allow-low-block-assignment", action="store_true", help="Continue despite incomplete SNP assignment to LD blocks.")
+    parser.add_argument("--allele-match-warning", type=float, default=0.90, help="Warning threshold for allele match rate.")
+    parser.add_argument("--allele-match-fail", type=float, default=0.70, help="Fail threshold for allele match rate.")
+    parser.add_argument("--allow-low-allele-match", action="store_true", help="Continue despite low allele match rate.")
+    parser.add_argument("--tissue-nonzero-warning", type=float, default=0.01, help="Warning threshold for tissue nonzero rate.")
+    parser.add_argument("--tissue-nonzero-fail", type=float, default=0.001, help="Fail threshold for tissue nonzero rate.")
+    parser.add_argument("--allow-low-tissue-nonzero", action="store_true", help="Continue despite low tissue nonzero rate.")
+    parser.add_argument("--gene-pruning-mode", choices=["strongest", "none", "top-k"], default="strongest", help="Gene representative pruning mode.")
+    parser.add_argument("--gene-pruning-top-k", type=int, default=1, help="Number of SNPs per gene when --gene-pruning-mode top-k is used.")
+    parser.add_argument("--require-mygene-for-ensembl", action="store_true", help="Fail when Ensembl gene IDs are present but mygene symbol mapping is unavailable.")
+    parser.add_argument("--allow-over-rank", action="store_true", help="Allow rank values larger than the number of tissue columns.")
     args = parser.parse_args()
 
     if not args.no_banner:
         print_project_banner()
 
-    manifest_df = pd.read_csv(args.manifest)
-    bed_rows = manifest_df[manifest_df['type'] == 'bed']
-    bed_path = bed_rows.iloc[0]['path'] if len(bed_rows) > 0 else args.bed
-    bed_path = resolve_input_path(bed_path, args.manifest)
+    try:
+        bfile_path, identity_ld_active, identity_ld_reason = resolve_ld_reference(args)
+        manifest_df = pd.read_csv(args.manifest)
+        if "type" in manifest_df.columns:
+            manifest_df["type"] = manifest_df["type"].astype(str).str.lower()
+        bed_rows = manifest_df[manifest_df['type'] == 'bed']
+        bed_path = bed_rows.iloc[0]['path'] if len(bed_rows) > 0 else args.bed
+        bed_path = resolve_input_path(bed_path, args.manifest)
 
-    run_tuning(args.manifest, bed_path, args.max_rank, args.seed, args.corcondia_threshold, args.out)
+        run_tuning(
+            args.manifest,
+            bed_path,
+            max_rank=args.max_rank,
+            seed=args.seed,
+            corcondia_threshold=args.corcondia_threshold,
+            out_dir=args.out,
+            bfile_path=bfile_path,
+            ld_reference_mode=args.ld_reference_mode,
+            ld_min_overlap=args.ld_min_overlap,
+            quiet_blocks=args.quiet_blocks,
+            allow_identity_ld=args.allow_identity_ld,
+            identity_ld_active=identity_ld_active,
+            identity_ld_reason=identity_ld_reason,
+            gene_pruning_mode=args.gene_pruning_mode,
+            gene_pruning_top_k=args.gene_pruning_top_k,
+            require_mygene_for_ensembl=args.require_mygene_for_ensembl,
+            tissue_nonzero_warning=args.tissue_nonzero_warning,
+            tissue_nonzero_fail=args.tissue_nonzero_fail,
+            allow_low_tissue_nonzero=args.allow_low_tissue_nonzero,
+            ld_coverage_warning=args.ld_coverage_warning,
+            ld_coverage_fail=args.ld_coverage_fail,
+            allow_low_coverage=args.allow_low_coverage,
+            block_assignment_warning=args.block_assignment_warning,
+            block_assignment_fail=args.block_assignment_fail,
+            allow_low_block_assignment=args.allow_low_block_assignment,
+            allele_match_warning=args.allele_match_warning,
+            allele_match_fail=args.allele_match_fail,
+            allow_low_allele_match=args.allow_low_allele_match,
+            allow_over_rank=args.allow_over_rank,
+        )
+    except Exception as exc:
+        print(f"[ERROR] Rank tuning failed: {exc}")
+        sys.exit(1)

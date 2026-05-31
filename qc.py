@@ -276,9 +276,14 @@ def add_tensor_and_ld_qc(
     ld_coverage_warning: float = 0.80,
     ld_coverage_fail: float = 0.50,
     allow_low_coverage: bool = False,
+    block_assignment_warning: float = 0.99,
+    block_assignment_fail: float = 0.95,
+    allow_low_block_assignment: bool = False,
 ) -> dict[str, Any]:
     if loader_stats:
         report["loader_stats"] = loader_stats
+        for warning in loader_stats.get("warnings", []) or []:
+            report.setdefault("warnings", []).append(str(warning))
         report["gene_pruning"] = {
             "mode": loader_stats.get("Gene_Pruning_Mode"),
             "top_k": loader_stats.get("Gene_Pruning_Top_K"),
@@ -310,9 +315,20 @@ def add_tensor_and_ld_qc(
         report.setdefault("warnings", []).append(
             f"Fraction of SNPs with empirical LD is {fraction_empirical:.3f}, below warning threshold {ld_coverage_warning:.3f}."
         )
-    if ld_qc.get("fraction_snps_assigned_to_block", 0.0) < 0.50:
+
+    fraction_assigned = ld_qc.get("fraction_snps_assigned_to_block", 0.0)
+    n_unassigned = ld_qc.get("n_snps_unassigned_to_block", 0)
+    if fraction_assigned < block_assignment_fail and not allow_low_block_assignment:
+        report.setdefault("failures", []).append(
+            f"Only {fraction_assigned:.3f} of tensor SNPs were assigned to LD blocks "
+            f"({n_unassigned} unassigned), below fail threshold {block_assignment_fail:.3f}. "
+            "Check LD-block BED genome build, chromosome naming, and coordinate range."
+        )
+    elif fraction_assigned < block_assignment_warning or n_unassigned > 0:
         report.setdefault("warnings", []).append(
-            "Fewer than 50% of tensor SNPs were assigned to LD blocks; check genome build and chromosome naming."
+            f"{n_unassigned} tensor SNPs were not assigned to any LD block "
+            f"(assignment fraction={fraction_assigned:.3f}). "
+            "These SNPs will not appear in Factor_A_SNPs.csv."
         )
     write_qc_reports(report, out_dir)
     if report.get("failures"):
@@ -414,7 +430,7 @@ def write_qc_reports(report: dict[str, Any], out_dir: str) -> None:
             handle.write(f"FAILURE: {failure}\n")
         handle.write("\nKey metrics\n")
         for row in rows:
-            handle.write(f"{row['section']}.{row['metric']}: {row['value']}\n")
+            handle.write(f"{row['section']}.{row['metric']}: {_format_text_value(row)}\n")
 
 
 def _flatten_report(obj: Any, rows: list[dict[str, str]], prefix: str = "") -> None:
@@ -425,6 +441,16 @@ def _flatten_report(obj: Any, rows: list[dict[str, str]], prefix: str = "") -> N
         rows.append({"section": prefix.rsplit(".", 1)[0] if "." in prefix else prefix, "metric": prefix.rsplit(".", 1)[-1], "value": "; ".join(map(str, obj))})
     else:
         rows.append({"section": prefix.rsplit(".", 1)[0] if "." in prefix else prefix, "metric": prefix.rsplit(".", 1)[-1], "value": str(obj)})
+
+
+def _format_text_value(row: dict[str, str], max_chars: int = 500) -> str:
+    key = f"{row.get('section', '')}.{row.get('metric', '')}"
+    value = str(row.get("value", ""))
+    if key.endswith("postfit_laplacian_usage.last_block_modes"):
+        return "[omitted from text report; see qc_report.json for full block-level modes]"
+    if len(value) > max_chars:
+        return value[:max_chars] + " ... [truncated; see qc_report.json for full value]"
+    return value
 
 
 def print_qc_summary(report: dict[str, Any]) -> None:

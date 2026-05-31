@@ -14,6 +14,7 @@ REQUIRED_PACKAGES = [
     ("polars", "polars"),
     ("pyarrow", "pyarrow"),
     ("sklearn", "scikit-learn"),
+    ("mygene", "mygene"),
 ]
 
 OPTIONAL_PACKAGES = [

@@ -60,9 +60,23 @@ def main() -> int:
     parser.add_argument("--ld-reference-mode", choices=["plink", "identity", "auto"], default="auto")
     parser.add_argument("--bfile", default=None, help="Optional PLINK reference prefix.")
     parser.add_argument("--allow-identity-ld", action="store_true")
+    parser.add_argument("--ld-min-overlap", type=int, default=2)
+    parser.add_argument("--ld-coverage-warning", type=float, default=0.80)
+    parser.add_argument("--ld-coverage-fail", type=float, default=0.50)
     parser.add_argument("--allow-low-coverage", action="store_true")
+    parser.add_argument("--block-assignment-warning", type=float, default=0.99)
+    parser.add_argument("--block-assignment-fail", type=float, default=0.95)
+    parser.add_argument("--allow-low-block-assignment", action="store_true")
+    parser.add_argument("--allele-match-warning", type=float, default=0.90)
+    parser.add_argument("--allele-match-fail", type=float, default=0.70)
     parser.add_argument("--allow-low-allele-match", action="store_true")
+    parser.add_argument("--tissue-nonzero-warning", type=float, default=0.01)
+    parser.add_argument("--tissue-nonzero-fail", type=float, default=0.001)
     parser.add_argument("--allow-low-tissue-nonzero", action="store_true")
+    parser.add_argument("--gene-pruning-mode", choices=["strongest", "none", "top-k"], default="strongest")
+    parser.add_argument("--gene-pruning-top-k", type=int, default=1)
+    parser.add_argument("--require-mygene-for-ensembl", action="store_true")
+    parser.add_argument("--allow-over-rank", action="store_true")
     parser.add_argument("--quiet-blocks", action="store_true")
     parser.add_argument("--no-run", action="store_true", help="Summarize existing seed_* outputs without running PRISMA.")
     args = parser.parse_args()
@@ -97,11 +111,25 @@ def main() -> int:
         if args.bfile:
             cmd += ["--bfile", args.bfile]
         cmd += ["--ld-reference-mode", args.ld_reference_mode]
+        cmd += ["--ld-min-overlap", str(args.ld_min_overlap)]
+        cmd += ["--ld-coverage-warning", str(args.ld_coverage_warning)]
+        cmd += ["--ld-coverage-fail", str(args.ld_coverage_fail)]
+        cmd += ["--block-assignment-warning", str(args.block_assignment_warning)]
+        cmd += ["--block-assignment-fail", str(args.block_assignment_fail)]
+        cmd += ["--allele-match-warning", str(args.allele_match_warning)]
+        cmd += ["--allele-match-fail", str(args.allele_match_fail)]
+        cmd += ["--tissue-nonzero-warning", str(args.tissue_nonzero_warning)]
+        cmd += ["--tissue-nonzero-fail", str(args.tissue_nonzero_fail)]
+        cmd += ["--gene-pruning-mode", args.gene_pruning_mode]
+        cmd += ["--gene-pruning-top-k", str(args.gene_pruning_top_k)]
         for flag in [
             "allow_identity_ld",
             "allow_low_coverage",
+            "allow_low_block_assignment",
             "allow_low_allele_match",
             "allow_low_tissue_nonzero",
+            "require_mygene_for_ensembl",
+            "allow_over_rank",
             "quiet_blocks",
         ]:
             if getattr(args, flag):
@@ -137,6 +165,29 @@ def main() -> int:
     summary = {
         "seeds": seeds,
         "reference_seed": reference_seed,
+        "run_configuration": {
+            "rank": args.rank,
+            "iter": args.iter,
+            "ld_reference_mode": args.ld_reference_mode,
+            "bfile": args.bfile,
+            "ld_min_overlap": args.ld_min_overlap,
+            "ld_coverage_warning": args.ld_coverage_warning,
+            "ld_coverage_fail": args.ld_coverage_fail,
+            "allow_low_coverage": args.allow_low_coverage,
+            "block_assignment_warning": args.block_assignment_warning,
+            "block_assignment_fail": args.block_assignment_fail,
+            "allow_low_block_assignment": args.allow_low_block_assignment,
+            "allele_match_warning": args.allele_match_warning,
+            "allele_match_fail": args.allele_match_fail,
+            "allow_low_allele_match": args.allow_low_allele_match,
+            "tissue_nonzero_warning": args.tissue_nonzero_warning,
+            "tissue_nonzero_fail": args.tissue_nonzero_fail,
+            "allow_low_tissue_nonzero": args.allow_low_tissue_nonzero,
+            "gene_pruning_mode": args.gene_pruning_mode,
+            "gene_pruning_top_k": args.gene_pruning_top_k,
+            "require_mygene_for_ensembl": args.require_mygene_for_ensembl,
+            "allow_over_rank": args.allow_over_rank,
+        },
         "min_pairwise_aligned_cosine": float(min(row["min_aligned_cosine"] for row in pair_rows)) if pair_rows else 1.0,
         "mean_pairwise_aligned_cosine": float(np.mean([row["mean_aligned_cosine"] for row in pair_rows])) if pair_rows else 1.0,
     }

@@ -149,6 +149,8 @@ Rank exploration:
       --manifest examples/mini_fixture_1000/manifest.csv \
       --bed examples/mini_fixture_1000/ld_blocks_header.bed \
       --max_rank 5 \
+      --ld-reference-mode identity \
+      --allow-identity-ld \
       --out results/mini_fixture_rank
 
 `run_prisma.py --rank auto` and `tune_rank.py` call the same rank-selection
@@ -156,6 +158,13 @@ logic. The shared rule evaluates ranks 1..max_rank, computes fit and a
 CORCONDIA-style diagnostic when possible, selects the lowest non-trivial rank
 passing the threshold, and falls back to a variance-explained elbow when no
 rank passes.
+
+For real-data rank tuning, pass the same LD and QC options used by
+`run_prisma.py`, including `--bfile`, `--ld-reference-mode`,
+`--ld-min-overlap`, allele-match thresholds, tissue nonzero thresholds, LD
+coverage thresholds, LD-block assignment thresholds, and gene-pruning mode.
+This keeps standalone rank exploration aligned with the LD-aware analysis
+configuration rather than silently reverting to identity-LD diagnostics.
 
 For automatic rank selection, PRISMA caps `--max-rank` at the number of tissue
 columns unless `--allow-over-rank` is supplied. Explicit ranks larger than the
@@ -222,6 +231,13 @@ Low allele-match, tissue-nonzero, or LD-coverage values should be resolved
 before biological interpretation. Override flags are available for diagnostic
 workflows, but should not be used to hide input incompatibility.
 
+By default, incomplete LD-block assignment fails when
+`fraction_snps_assigned_to_block < 0.95`, warns when it is below `0.99`, and
+warns whenever any tensor SNP is unassigned. Unassigned SNPs are not included in
+`Factor_A_SNPs.csv`. Use `--block-assignment-fail`,
+`--block-assignment-warning`, and `--allow-low-block-assignment` only after
+confirming that the missing block coverage is expected and documented.
+
 ## Troubleshooting Input QC
 
 - No overlapping SNPs between GWAS and eQTL: check rsID naming, genome build,
@@ -233,7 +249,8 @@ workflows, but should not be used to hide input incompatibility.
   usable overlapping SNPs after allele harmonization. Use
   `--allow-low-tissue-nonzero` only for diagnostics.
 - Low LD-block assignment: check chromosome naming, coordinate build, and
-  whether the LD-block BED file covers the GWAS/eQTL coordinate range.
+  whether the LD-block BED file covers the GWAS/eQTL coordinate range. By
+  default, substantial missing block coverage fails before factorization.
 - Low empirical LD coverage with `--bfile`: check that the PLINK reference and
   tensor SNP identifiers use the same SNP naming and genome build.
 - Multiple GWAS manifest rows: the public CLI supports one phenotype at a time;
@@ -256,12 +273,19 @@ The `scripts/` folder includes a utility for converting raw GTEx eQTL associatio
       --summary-output results/Whole_Blood_cleaning_summary.csv
 
 Raw GTEx eQTL tables can contain multiple gene-level associations for the same
-rsID. PRISMA uses a SNP × tissue input matrix, so this preprocessing step
+rsID. PRISMA uses a SNP x tissue input matrix, so this preprocessing step
 retains one representative association per SNP: the row with the largest
 absolute eQTL Z-score, where Z = beta / se. For GTEx variant records, beta is
 interpreted with respect to ALT, so the standard output uses A1=ALT and A2=REF.
 
-If your eQTL target genes are Ensembl IDs, `mygene>=3.2` is required for manuscript-style exact filtering. PRISMA uses `mygene` to map Ensembl IDs to gene symbols before applying the targeted housekeeping-gene and 17q21.31 LD-trap filters documented in `resources/targeted_gene_blacklist.tsv`. This mapping step is skipped for gene-symbol inputs and for the synthetic example data.
+If your eQTL target genes are Ensembl IDs, `mygene>=3.2` is required for
+manuscript-style exact filtering and is checked by
+`scripts/check_environment.py`. PRISMA uses `mygene` to map Ensembl IDs to gene
+symbols before applying the targeted housekeeping-gene and 17q21.31 LD-trap
+filters documented in `resources/targeted_gene_blacklist.tsv`. This mapping
+step is skipped for gene-symbol inputs and for the synthetic example data. If
+Ensembl IDs are present and mapping must be enforced, use
+`--require-mygene-for-ensembl`.
 
 The public repository does not redistribute GTEx or other restricted eQTL
 summary statistics. The mini-fixture is for software validation only and is not

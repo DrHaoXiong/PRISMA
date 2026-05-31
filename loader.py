@@ -62,6 +62,7 @@ class TensorDataLoader:
         apply_genomic_control=True,
         gene_pruning_mode="strongest",
         gene_pruning_top_k=1,
+        require_mygene_for_ensembl=False,
     ):
         """
         Initialize loader.
@@ -74,6 +75,7 @@ class TensorDataLoader:
         self.apply_genomic_control = apply_genomic_control
         self.gene_pruning_mode = str(gene_pruning_mode).lower()
         self.gene_pruning_top_k = int(gene_pruning_top_k)
+        self.require_mygene_for_ensembl = bool(require_mygene_for_ensembl)
         if self.gene_pruning_mode not in {"strongest", "none", "top-k"}:
             raise ValueError("--gene-pruning-mode must be one of: strongest, none, top-k.")
         if self.gene_pruning_top_k < 1:
@@ -91,7 +93,7 @@ class TensorDataLoader:
                 _resolve_manifest_path(path_value, manifest_path)
                 for path_value in self.manifest['path']
             ]
-        self.stats = {}
+        self.stats = {"warnings": []}
         print(f"[INFO] Reading data manifest: {manifest_path}")
         print(f"       Found {len(self.manifest)} data files.")
 
@@ -418,10 +420,29 @@ class TensorDataLoader:
                     results = mg.querymany(clean_ensgs, scopes='ensembl.gene', fields='symbol', species='human', verbose=False)
                     symbol_dict = {res['query']: str(res.get('symbol', '')).upper() for res in results if 'symbol' in res}
                 except ImportError:
-                    print("   [WARNING] mygene is not installed. Symbol-based blacklist filtering may be incomplete.")
+                    warning = (
+                        "Ensembl gene IDs were detected, but mygene is not installed. "
+                        "Symbol-based blacklist filtering may be incomplete."
+                    )
+                    print(f"   [WARNING] {warning}")
+                    self.stats.setdefault("warnings", []).append(warning)
+                    if self.require_mygene_for_ensembl:
+                        raise ValueError(
+                            "Ensembl gene IDs require mygene mapping because --require-mygene-for-ensembl was set."
+                        )
                     symbol_dict = {}
                 except Exception as e:
-                    print(f"   [WARNING] mygene query failed: {e}")
+                    warning = (
+                        "Ensembl gene IDs were detected, but the mygene query failed. "
+                        f"Symbol-based blacklist filtering may be incomplete: {e}"
+                    )
+                    print(f"   [WARNING] {warning}")
+                    self.stats.setdefault("warnings", []).append(warning)
+                    if self.require_mygene_for_ensembl:
+                        raise ValueError(
+                            "Ensembl gene IDs require successful mygene mapping because "
+                            "--require-mygene-for-ensembl was set."
+                        )
                     symbol_dict = {}
             else:
                 symbol_dict = {}

@@ -141,3 +141,26 @@ def test_over_rank_fails_without_explicit_permission(tmp_path):
     result = _run_prisma(repo, manifest, tmp_path / "out", ["--rank", "4"])
     assert result.returncode != 0
     assert "exceeds the number of tissue columns" in (result.stdout + result.stderr)
+
+
+def test_incomplete_ld_block_assignment_fails_by_default(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    manifest = _write_small_fixture(tmp_path)
+    bed_path = tmp_path / "blocks.bed"
+    bed_path.write_text("chr1\t3000\t20000\n", encoding="utf-8")
+    result = _run_prisma(repo, manifest, tmp_path / "out")
+    assert result.returncode != 0
+    assert "assigned to LD blocks" in (result.stdout + result.stderr)
+
+
+def test_incomplete_ld_block_assignment_can_be_explicitly_allowed(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    manifest = _write_small_fixture(tmp_path)
+    bed_path = tmp_path / "blocks.bed"
+    bed_path.write_text("chr1\t3000\t20000\n", encoding="utf-8")
+    out = tmp_path / "out"
+    result = _run_prisma(repo, manifest, out, ["--allow-low-block-assignment"])
+    assert result.returncode == 0, result.stdout + result.stderr
+    qc = json.loads((out / "qc_report.json").read_text(encoding="utf-8"))
+    assert qc["ld_block_coverage"]["n_snps_unassigned_to_block"] == 2
+    assert any("will not appear in Factor_A_SNPs.csv" in w for w in qc["warnings"])

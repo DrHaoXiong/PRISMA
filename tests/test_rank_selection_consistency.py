@@ -91,3 +91,17 @@ def test_run_prisma_auto_rank_matches_tune_rank_cli(tmp_path):
     run_selection = json.loads((run_out / "rank_selection.json").read_text(encoding="utf-8"))
     tune_selection = json.loads((tune_out / "rank_selection.json").read_text(encoding="utf-8"))
     assert run_selection["selected_rank"] == tune_selection["selected_rank"]
+
+
+def test_tune_rank_exposes_ld_aware_options():
+    repo = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, str(repo / "tune_rank.py"), "--help"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert "--bfile" in result.stdout
+    assert "--ld-reference-mode" in result.stdout
+    assert "--block-assignment-fail" in result.stdout

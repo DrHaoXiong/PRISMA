@@ -76,6 +76,9 @@ def main():
     parser.add_argument("--ld-coverage-warning", type=float, default=0.80, help="Warning threshold for LD reference SNP coverage.")
     parser.add_argument("--ld-coverage-fail", type=float, default=0.50, help="Fail threshold for LD reference SNP coverage.")
     parser.add_argument("--allow-low-coverage", action="store_true", help="Continue despite low LD reference coverage.")
+    parser.add_argument("--block-assignment-warning", type=float, default=0.99, help="Warning threshold for the fraction of tensor SNPs assigned to LD blocks.")
+    parser.add_argument("--block-assignment-fail", type=float, default=0.95, help="Fail threshold for the fraction of tensor SNPs assigned to LD blocks.")
+    parser.add_argument("--allow-low-block-assignment", action="store_true", help="Continue despite incomplete SNP assignment to LD blocks.")
     parser.add_argument("--allele-match-warning", type=float, default=0.90, help="Warning threshold for allele match rate.")
     parser.add_argument("--allele-match-fail", type=float, default=0.70, help="Fail threshold for allele match rate.")
     parser.add_argument("--allow-low-allele-match", action="store_true", help="Continue despite low allele match rate.")
@@ -84,6 +87,7 @@ def main():
     parser.add_argument("--allow-low-tissue-nonzero", action="store_true", help="Continue despite low tissue nonzero rate.")
     parser.add_argument("--gene-pruning-mode", choices=["strongest", "none", "top-k"], default="strongest", help="Gene representative pruning mode. Default 'strongest' preserves manuscript-compatible behavior.")
     parser.add_argument("--gene-pruning-top-k", type=int, default=1, help="Number of SNPs per gene when --gene-pruning-mode top-k is used.")
+    parser.add_argument("--require-mygene-for-ensembl", action="store_true", help="Fail when Ensembl gene IDs are present but mygene symbol mapping is unavailable.")
     parser.add_argument("--allow-over-rank", action="store_true", help="Allow rank values larger than the number of tissue columns.")
     args = parser.parse_args()
 
@@ -164,6 +168,7 @@ def main():
             apply_genomic_control=True,
             gene_pruning_mode=args.gene_pruning_mode,
             gene_pruning_top_k=args.gene_pruning_top_k,
+            require_mygene_for_ensembl=args.require_mygene_for_ensembl,
         )
         df = loader.load_and_align()
     except Exception as e:
@@ -215,6 +220,10 @@ def main():
             "identity_ld_reason": identity_ld_reason,
             "gene_pruning_mode": args.gene_pruning_mode,
             "gene_pruning_top_k": int(args.gene_pruning_top_k),
+            "block_assignment_warning": float(args.block_assignment_warning),
+            "block_assignment_fail": float(args.block_assignment_fail),
+            "allow_low_block_assignment": bool(args.allow_low_block_assignment),
+            "require_mygene_for_ensembl": bool(args.require_mygene_for_ensembl),
             "allow_over_rank": bool(args.allow_over_rank),
         }
         if identity_ld_active:
@@ -234,6 +243,9 @@ def main():
             ld_coverage_warning=args.ld_coverage_warning,
             ld_coverage_fail=args.ld_coverage_fail,
             allow_low_coverage=args.allow_low_coverage,
+            block_assignment_warning=args.block_assignment_warning,
+            block_assignment_fail=args.block_assignment_fail,
+            allow_low_block_assignment=args.allow_low_block_assignment,
         )
         print_qc_summary(qc_report)
     except Exception as e:
