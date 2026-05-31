@@ -4,6 +4,13 @@ import numpy as np
 import os
 from pathlib import Path
 
+from schema import (
+    EQTL_ALIASES,
+    GWAS_ALIASES,
+    build_column_rename_map,
+    detect_delimiter,
+)
+
 
 def _resolve_manifest_path(path_value, manifest_path):
     path = Path(str(path_value))
@@ -49,7 +56,13 @@ class TensorDataLoader:
     4. Assemble standardized tensor-ready input.
     """
 
-    def __init__(self, manifest_path, apply_genomic_control=True):
+    def __init__(
+        self,
+        manifest_path,
+        apply_genomic_control=True,
+        gene_pruning_mode="strongest",
+        gene_pruning_top_k=1,
+    ):
         """
         Initialize loader.
 
@@ -59,12 +72,20 @@ class TensorDataLoader:
         """
         self.manifest_path = manifest_path
         self.apply_genomic_control = apply_genomic_control
+        self.gene_pruning_mode = str(gene_pruning_mode).lower()
+        self.gene_pruning_top_k = int(gene_pruning_top_k)
+        if self.gene_pruning_mode not in {"strongest", "none", "top-k"}:
+            raise ValueError("--gene-pruning-mode must be one of: strongest, none, top-k.")
+        if self.gene_pruning_top_k < 1:
+            raise ValueError("--gene-pruning-top-k must be >= 1.")
 
         # Read manifest.
         if not os.path.exists(manifest_path):
             raise FileNotFoundError(f"Manifest file does not exist: {manifest_path}")
 
         self.manifest = pd.read_csv(manifest_path)
+        if "type" in self.manifest.columns:
+            self.manifest["type"] = self.manifest["type"].astype(str).str.lower()
         if 'path' in self.manifest.columns:
             self.manifest['path'] = [
                 _resolve_manifest_path(path_value, manifest_path)
@@ -73,6 +94,14 @@ class TensorDataLoader:
         self.stats = {}
         print(f"[INFO] Reading data manifest: {manifest_path}")
         print(f"       Found {len(self.manifest)} data files.")
+
+    def _scan_table(self, path, aliases, schema_overrides=None, context="input"):
+        separator = detect_delimiter(path)
+        lf = pl.scan_csv(path, separator=separator, schema_overrides=schema_overrides or {})
+        rename_map = build_column_rename_map(lf.collect_schema().names(), aliases, context)
+        if rename_map:
+            lf = lf.rename(rename_map)
+        return lf, rename_map
 
     def _compute_lambda_gc(self, z_scores):
         """
@@ -169,17 +198,25 @@ class TensorDataLoader:
         gwas_files = self.manifest[self.manifest['type'] == 'gwas']
         if len(gwas_files) == 0:
             raise ValueError("Manifest does not contain a GWAS file.")
+        if len(gwas_files) > 1:
+            raise ValueError(
+                "PRISMA public single-phenotype pipeline requires exactly one GWAS row "
+                f"in the manifest; found {len(gwas_files)}. Multi-phenotype P>1 mode is "
+                "not enabled in the validated public CLI."
+            )
 
         gwas_path = gwas_files.iloc[0]['path']
         gwas_name = gwas_files.iloc[0]['name']
         print(f"\n[INFO] Building GWAS backbone: {gwas_name}")
 
         # Lazily load GWAS. CHR may include X/Y/MT, so read it as string first.
-        lf_gwas = pl.scan_csv(
+        lf_gwas, gwas_rename_map = self._scan_table(
             gwas_path,
-            separator='\t',
-            schema_overrides={'CHR': pl.Utf8}
+            GWAS_ALIASES,
+            schema_overrides={'CHR': pl.Utf8, 'chr': pl.Utf8, 'chromosome': pl.Utf8},
+            context="GWAS",
         )
+        self.stats["GWAS_Column_Mapping"] = gwas_rename_map
 
         # Standardize column names.
         lf_gwas = lf_gwas.rename({
@@ -221,7 +258,13 @@ class TensorDataLoader:
             print(f"\n   Processing tissue: {tissue_name}")
 
             # Lazily load eQTL.
-            lf_eqtl = pl.scan_csv(tissue_path, separator='\t')
+            lf_eqtl, eqtl_rename_map = self._scan_table(
+                tissue_path,
+                EQTL_ALIASES,
+                schema_overrides={'CHR': pl.Utf8, 'chr': pl.Utf8, 'chromosome': pl.Utf8},
+                context=f"eQTL tissue {tissue_name}",
+            )
+            self.stats.setdefault("eQTL_Column_Mapping", {})[str(tissue_name)] = eqtl_rename_map
 
             # Compute raw eQTL Z-score.
             lf_eqtl = lf_eqtl.with_columns(
@@ -286,6 +329,11 @@ class TensorDataLoader:
             self.stats['N_Candidate_Variants_PreLD'] = int(len(df_final))
             print(f"   Polars prefilter: {n_total} -> {len(df_final)} "
                   f"(removed {n_total - len(df_final)} GWAS-only SNPs)")
+            if len(df_final) == 0:
+                raise ValueError(
+                    "No GWAS/eQTL SNP overlap remained after allele alignment and eQTL-support "
+                    "filtering. Check SNP identifiers, genome build, manifest paths, and eQTL schema."
+                )
 
             # Step 1: infer a per-row consensus gene.
             gene_pd = df_final.select(gene_cols).to_pandas()
@@ -311,18 +359,39 @@ class TensorDataLoader:
             )
 
             n_before = len(df_final)
+            consensus_counts = consensus_gene.value_counts(dropna=True)
+            self.stats['N_Gene_Pruning_Input_Rows'] = int(n_before)
+            self.stats['Gene_Pruning_Mode'] = self.gene_pruning_mode
+            self.stats['Gene_Pruning_Top_K'] = int(self.gene_pruning_top_k)
+            self.stats['Top_Compressed_Genes'] = [
+                {"gene": str(gene), "n_rows": int(count)}
+                for gene, count in consensus_counts.head(10).items()
+            ]
 
-            # Step 3: keep the strongest SNP for each consensus gene.
-            df_final = (
-                df_final
-                .sort('_composite_z', descending=True)
-                .group_by('_consensus_gene')
-                .first()
-                .sort(['CHR', 'BP'])
-            )
+            # Step 3: optional gene-level input compression.
+            if self.gene_pruning_mode == "strongest":
+                df_final = (
+                    df_final
+                    .sort('_composite_z', descending=True)
+                    .group_by('_consensus_gene')
+                    .first()
+                    .sort(['CHR', 'BP'])
+                )
+            elif self.gene_pruning_mode == "top-k":
+                df_final = (
+                    df_final
+                    .sort('_composite_z', descending=True)
+                    .group_by('_consensus_gene')
+                    .head(self.gene_pruning_top_k)
+                    .sort(['CHR', 'BP'])
+                )
+            else:
+                df_final = df_final.sort(['CHR', 'BP'])
 
             n_after = len(df_final)
             self.stats['N_Gene_Representatives_PreBlacklist'] = int(n_after)
+            self.stats['N_Gene_Pruning_Output_Rows'] = int(n_after)
+            self.stats['Gene_Pruning_Compression_Rate'] = float(1 - n_after / max(n_before, 1))
             print(f"   Gene representative pruning: {n_before} SNPs -> {n_after} gene representatives")
             print(f"   Compression rate: {(1 - n_after/n_before)*100:.1f}%")
 

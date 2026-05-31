@@ -44,6 +44,18 @@ Expected eQTL columns:
 
 The core loader uses SNP, A1, A2, BETA, SE, and TARGET_GENE directly. CHR, BP, and P are retained in the standard preprocessing output for traceability and compatibility with manuscript data checks.
 
+Common case and naming aliases are normalized automatically. For example,
+`snp`, `rsid`, or `variant_id` can map to `SNP`; `chr` or `chromosome` can map
+to `CHR`; GWAS `p` or `p_value` can map to `pval`; eQTL `beta`, `slope`, or
+`beta_alt` can map to `BETA`; and `gene`, `gene_symbol`, or `gene_id` can map
+to `TARGET_GENE`. If multiple columns map to the same canonical field, PRISMA
+fails with an explicit schema-conflict message rather than guessing.
+
+The public CLI currently validates a single-phenotype workflow and therefore
+requires exactly one `gwas` row in the manifest. A manifest with multiple GWAS
+rows fails clearly; multi-phenotype `P>1` analyses remain a framework-level
+extension rather than a validated public command-line workflow.
+
 Expected LD-block BED columns:
 
 - chr, start, stop
@@ -108,6 +120,21 @@ For your own data, provide a manifest using the same structure:
       --ld-reference-mode plink \
       --iter 20
 
+Manuscript-compatible gene-level input compression is enabled by default:
+
+    --gene-pruning-mode strongest
+
+This keeps the strongest representative SNP for each consensus target gene
+using cross-tissue eQTL strength. Diagnostic alternatives are available:
+
+- `--gene-pruning-mode none`: retain all SNP rows after QC.
+- `--gene-pruning-mode top-k --gene-pruning-top-k K`: retain up to K SNP rows
+  per consensus target gene.
+
+The QC report records the pruning mode, input rows, output rows, compression
+rate, and the most compressed genes. Non-default pruning modes are intended for
+sensitivity analysis and do not reproduce the manuscript default exactly.
+
 Output files:
 
 - Factor_A_SNPs.csv: SNP/locus factor loadings.
@@ -129,6 +156,27 @@ logic. The shared rule evaluates ranks 1..max_rank, computes fit and a
 CORCONDIA-style diagnostic when possible, selects the lowest non-trivial rank
 passing the threshold, and falls back to a variance-explained elbow when no
 rank passes.
+
+For automatic rank selection, PRISMA caps `--max-rank` at the number of tissue
+columns unless `--allow-over-rank` is supplied. Explicit ranks larger than the
+number of tissues fail by default because they are usually diagnostic or
+overfitting regimes, especially in the public single-phenotype CLI.
+
+Seed stability can be assessed with:
+
+    python scripts/run_seed_stability.py \
+      --manifest examples/mini_fixture_1000/manifest.csv \
+      --out results/seed_stability_test \
+      --rank 3 \
+      --seeds 1,2,3,4,5 \
+      --ld-reference-mode identity \
+      --allow-identity-ld \
+      --iter 5
+
+This utility runs multiple seeds, aligns Factor B components, and writes
+pairwise aligned cosine-similarity summaries. It is not part of the default
+pipeline because manuscript-scale multi-seed runs can be computationally
+expensive.
 
 ## LD Reference Mode
 
@@ -173,6 +221,25 @@ Key fields include:
 Low allele-match, tissue-nonzero, or LD-coverage values should be resolved
 before biological interpretation. Override flags are available for diagnostic
 workflows, but should not be used to hide input incompatibility.
+
+## Troubleshooting Input QC
+
+- No overlapping SNPs between GWAS and eQTL: check rsID naming, genome build,
+  file paths, and delimiter/schema mapping. PRISMA fails with a tissue-specific
+  message when overlap is zero.
+- Low allele-match rate: check A1/A2 conventions and whether eQTL beta is
+  reported on the same allele basis expected by the input file.
+- All-zero or low-nonzero tissue layer: check whether the tissue eQTL file has
+  usable overlapping SNPs after allele harmonization. Use
+  `--allow-low-tissue-nonzero` only for diagnostics.
+- Low LD-block assignment: check chromosome naming, coordinate build, and
+  whether the LD-block BED file covers the GWAS/eQTL coordinate range.
+- Low empirical LD coverage with `--bfile`: check that the PLINK reference and
+  tensor SNP identifiers use the same SNP naming and genome build.
+- Multiple GWAS manifest rows: the public CLI supports one phenotype at a time;
+  run separate manifests or implement a validated multi-phenotype extension.
+- Ambiguous schema aliases: remove duplicate synonym columns so exactly one
+  input column maps to each required canonical field.
 
 ## eQTL Preprocessing
 

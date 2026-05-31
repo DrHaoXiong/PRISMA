@@ -82,6 +82,9 @@ def main():
     parser.add_argument("--tissue-nonzero-warning", type=float, default=0.01, help="Warning threshold for tissue nonzero rate.")
     parser.add_argument("--tissue-nonzero-fail", type=float, default=0.001, help="Fail threshold for tissue nonzero rate.")
     parser.add_argument("--allow-low-tissue-nonzero", action="store_true", help="Continue despite low tissue nonzero rate.")
+    parser.add_argument("--gene-pruning-mode", choices=["strongest", "none", "top-k"], default="strongest", help="Gene representative pruning mode. Default 'strongest' preserves manuscript-compatible behavior.")
+    parser.add_argument("--gene-pruning-top-k", type=int, default=1, help="Number of SNPs per gene when --gene-pruning-mode top-k is used.")
+    parser.add_argument("--allow-over-rank", action="store_true", help="Allow rank values larger than the number of tissue columns.")
     args = parser.parse_args()
 
     if not args.no_banner:
@@ -156,7 +159,12 @@ def main():
             allele_match_fail=args.allele_match_fail,
             allow_low_allele_match=args.allow_low_allele_match,
         )
-        loader = TensorDataLoader(args.manifest, apply_genomic_control=True)
+        loader = TensorDataLoader(
+            args.manifest,
+            apply_genomic_control=True,
+            gene_pruning_mode=args.gene_pruning_mode,
+            gene_pruning_top_k=args.gene_pruning_top_k,
+        )
         df = loader.load_and_align()
     except Exception as e:
         print(f"[ERROR] Data loading failed: {e}")
@@ -205,6 +213,9 @@ def main():
             "allow_identity_ld": bool(args.allow_identity_ld),
             "identity_ld_active": bool(identity_ld_active),
             "identity_ld_reason": identity_ld_reason,
+            "gene_pruning_mode": args.gene_pruning_mode,
+            "gene_pruning_top_k": int(args.gene_pruning_top_k),
+            "allow_over_rank": bool(args.allow_over_rank),
         }
         if identity_ld_active:
             qc_report.setdefault("warnings", []).append(IDENTITY_LD_MESSAGE)
@@ -216,6 +227,7 @@ def main():
             partitioner,
             builder,
             args.out,
+            loader_stats=loader.stats,
             tissue_nonzero_warning=args.tissue_nonzero_warning,
             tissue_nonzero_fail=args.tissue_nonzero_fail,
             allow_low_tissue_nonzero=args.allow_low_tissue_nonzero,
@@ -231,13 +243,21 @@ def main():
     # 5. Determine rank.
     rank_value = str(args.rank).strip().lower()
     if args.auto_rank or rank_value in {"auto", "0"}:
+        effective_max_rank = int(args.max_rank)
+        if effective_max_rank > n_tissues and not args.allow_over_rank:
+            print(
+                f"[WARNING] --max-rank {effective_max_rank} exceeds the number of tissue columns "
+                f"({n_tissues}); capping automatic rank search at {n_tissues}. Use "
+                "--allow-over-rank to scan higher ranks intentionally."
+            )
+            effective_max_rank = n_tissues
         final_rank, _, selection = select_rank(
             partitioner,
             builder,
             block_defs,
             n_tissues,
             n_phenos,
-            max_rank=args.max_rank,
+            max_rank=effective_max_rank,
             corcondia_threshold=args.corcondia_threshold,
             rank_seed=args.rank_seed,
             max_iter=5,
@@ -249,6 +269,12 @@ def main():
             final_rank = int(rank_value)
         except ValueError:
             print("[ERROR] --rank must be an integer, 0, or 'auto'.")
+            sys.exit(1)
+        if final_rank > n_tissues and not args.allow_over_rank:
+            print(
+                f"[ERROR] Requested rank {final_rank} exceeds the number of tissue columns "
+                f"({n_tissues}). Use --allow-over-rank only for deliberate diagnostic runs."
+            )
             sys.exit(1)
         print(f"[INFO] Using user-specified Rank: {final_rank}")
 

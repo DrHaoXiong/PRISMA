@@ -9,6 +9,12 @@ import numpy as np
 import pandas as pd
 
 from partition import normalize_chromosome
+from schema import (
+    EQTL_ALIASES,
+    GWAS_ALIASES,
+    normalize_pandas_columns,
+    read_table_with_detected_delimiter,
+)
 
 
 GWAS_REQUIRED_COLUMNS = ["SNP", "CHR", "BP", "effect_allele", "other_allele", "beta", "se", "pval"]
@@ -30,9 +36,7 @@ def resolve_input_path(path_value: str, manifest_path: str | os.PathLike[str]) -
 
 
 def _read_table(path: str) -> pd.DataFrame:
-    if str(path).lower().endswith(".csv"):
-        return pd.read_csv(path)
-    return pd.read_csv(path, sep="\t")
+    return read_table_with_detected_delimiter(path)
 
 
 def _missing_counts(df: pd.DataFrame, columns: list[str]) -> dict[str, int]:
@@ -112,14 +116,24 @@ def initialize_qc_report(
             _schema_failure(f"Manifest must contain a row with type='{required_type}'.", report)
     if "eqtl" not in set(manifest["type"]):
         _schema_failure("Manifest must contain at least one row with type='eqtl'.", report)
+    n_gwas_rows = int((manifest["type"] == "gwas").sum())
+    if n_gwas_rows != 1:
+        _schema_failure(
+            "PRISMA public single-phenotype pipeline requires exactly one GWAS row "
+            f"in the manifest; found {n_gwas_rows}. Multi-phenotype P>1 mode is not "
+            "enabled in the validated public CLI.",
+            report,
+        )
 
     if report["failures"]:
         write_qc_reports(report, out_dir)
         raise ValueError("; ".join(report["failures"]))
 
     gwas_row = manifest[manifest["type"] == "gwas"].iloc[0]
-    gwas = _read_table(gwas_row["resolved_path"])
+    gwas_raw = _read_table(gwas_row["resolved_path"])
+    gwas, gwas_mapping = normalize_pandas_columns(gwas_raw, GWAS_ALIASES, "GWAS")
     report["gwas"] = _qc_gwas_schema(gwas)
+    report["gwas"]["column_mapping"] = gwas_mapping
     if report["gwas"]["missing_required_columns"]:
         _schema_failure(f"GWAS file is missing required columns: {report['gwas']['missing_required_columns']}", report)
         write_qc_reports(report, out_dir)
@@ -129,8 +143,10 @@ def initialize_qc_report(
     allele_reports: dict[str, Any] = {}
     for _, row in manifest[manifest["type"] == "eqtl"].iterrows():
         tissue = str(row["name"])
-        eqtl = _read_table(row["resolved_path"])
+        eqtl_raw = _read_table(row["resolved_path"])
+        eqtl, eqtl_mapping = normalize_pandas_columns(eqtl_raw, EQTL_ALIASES, f"eQTL tissue {tissue}")
         eqtl_reports[tissue] = _qc_eqtl_schema(eqtl)
+        eqtl_reports[tissue]["column_mapping"] = eqtl_mapping
         if eqtl_reports[tissue]["missing_required_columns"]:
             _schema_failure(
                 f"eQTL file for {tissue} is missing required columns: "
@@ -140,6 +156,13 @@ def initialize_qc_report(
             continue
         allele_report = _qc_allele_harmonization(gwas, eqtl)
         allele_reports[tissue] = allele_report
+        if allele_report["n_gwas_eqtl_overlapping_snps"] == 0:
+            _schema_failure(
+                f"No overlapping SNPs between GWAS and eQTL tissue {tissue}. "
+                "Check SNP identifiers, genome build, and input paths.",
+                report,
+            )
+            continue
         if allele_report["allele_match_rate"] < allele_match_fail and not allow_low_allele_match:
             _schema_failure(
                 f"Allele match rate for {tissue} is {allele_report['allele_match_rate']:.3f}, "
@@ -246,6 +269,7 @@ def add_tensor_and_ld_qc(
     partitioner,
     builder,
     out_dir: str,
+    loader_stats: dict[str, Any] | None = None,
     tissue_nonzero_warning: float = 0.01,
     tissue_nonzero_fail: float = 0.001,
     allow_low_tissue_nonzero: bool = False,
@@ -253,6 +277,16 @@ def add_tensor_and_ld_qc(
     ld_coverage_fail: float = 0.50,
     allow_low_coverage: bool = False,
 ) -> dict[str, Any]:
+    if loader_stats:
+        report["loader_stats"] = loader_stats
+        report["gene_pruning"] = {
+            "mode": loader_stats.get("Gene_Pruning_Mode"),
+            "top_k": loader_stats.get("Gene_Pruning_Top_K"),
+            "n_input_rows": loader_stats.get("N_Gene_Pruning_Input_Rows"),
+            "n_output_rows": loader_stats.get("N_Gene_Pruning_Output_Rows"),
+            "compression_rate": loader_stats.get("Gene_Pruning_Compression_Rate"),
+            "top_compressed_genes": loader_stats.get("Top_Compressed_Genes"),
+        }
     tensor_qc = _qc_tensor_coverage(aligned_df, tissue_cols)
     report["tensor_coverage"] = tensor_qc
     for tissue, rate in tensor_qc["nonzero_rate_per_tissue"].items():
