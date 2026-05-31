@@ -12,6 +12,7 @@ Core PRISMA engine:
 - tune_rank.py
 - qc.py
 - schema.py
+- ld_policy.py
 
 Sanitized preprocessing utilities:
 

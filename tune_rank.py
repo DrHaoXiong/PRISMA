@@ -5,7 +5,6 @@ import argparse
 import os
 import json
 import sys
-from pathlib import Path
 from scipy.linalg import khatri_rao
 
 from loader import TensorDataLoader
@@ -13,55 +12,7 @@ from partition import GenomicPartitioner
 from builder import TensorBuilder
 from solver import CoupledTensorSolver
 from qc import initialize_qc_report, add_tensor_and_ld_qc, print_qc_summary, resolve_input_path
-
-IDENTITY_LD_MESSAGE = (
-    "Identity Laplacian was requested or implied without an empirical LD reference. "
-    "For real-data rank tuning, provide --bfile with --ld-reference-mode plink/auto. "
-    "To intentionally run diagnostic identity-LD rank tuning, rerun with "
-    "--ld-reference-mode identity --allow-identity-ld."
-)
-
-
-def manifest_allows_auto_identity(manifest_path):
-    """Allow auto identity-LD only for bundled examples or tests."""
-    parts = {part.lower() for part in Path(manifest_path).resolve().parts}
-    return "examples" in parts or "tests" in parts
-
-
-def resolve_ld_reference(args):
-    """Apply the same identity-LD policy used by run_prisma.py."""
-    identity_ld_active = False
-    identity_ld_reason = None
-    if args.ld_reference_mode == "plink" and not args.bfile:
-        raise ValueError("--ld-reference-mode plink requires --bfile.")
-    if args.ld_reference_mode == "identity" and not args.allow_identity_ld:
-        raise ValueError(IDENTITY_LD_MESSAGE)
-
-    bfile_path = args.bfile if args.ld_reference_mode in {"plink", "auto"} and args.bfile else None
-    if bfile_path is None:
-        if args.ld_reference_mode == "auto":
-            if args.allow_identity_ld:
-                identity_ld_active = True
-                identity_ld_reason = "explicit_allow_identity_ld"
-                print(f"[WARNING] {IDENTITY_LD_MESSAGE}")
-            elif manifest_allows_auto_identity(args.manifest):
-                identity_ld_active = True
-                identity_ld_reason = "examples_or_tests_manifest"
-                print(
-                    f"[WARNING] {IDENTITY_LD_MESSAGE} "
-                    "Proceeding because the manifest is under examples/ or tests/."
-                )
-            else:
-                raise ValueError(IDENTITY_LD_MESSAGE)
-        elif args.ld_reference_mode == "identity":
-            identity_ld_active = True
-            identity_ld_reason = "explicit_identity_mode"
-            print(f"[WARNING] {IDENTITY_LD_MESSAGE}")
-    else:
-        missing_plink = [f"{bfile_path}{suffix}" for suffix in [".bed", ".bim", ".fam"] if not os.path.exists(f"{bfile_path}{suffix}")]
-        if missing_plink:
-            raise FileNotFoundError(f"Missing PLINK reference files: {missing_plink}")
-    return bfile_path, identity_ld_active, identity_ld_reason
+from ld_policy import resolve_ld_reference
 
 def print_project_banner():
     banner = """
@@ -273,6 +224,7 @@ def run_tuning(
     allow_identity_ld=False,
     identity_ld_active=False,
     identity_ld_reason=None,
+    ld_policy_warnings=None,
     gene_pruning_mode="strongest",
     gene_pruning_top_k=1,
     require_mygene_for_ensembl=False,
@@ -359,8 +311,8 @@ def run_tuning(
         "require_mygene_for_ensembl": bool(require_mygene_for_ensembl),
         "allow_over_rank": bool(allow_over_rank),
     }
-    if identity_ld_active:
-        qc_report.setdefault("warnings", []).append(IDENTITY_LD_MESSAGE)
+    for warning in ld_policy_warnings or []:
+        qc_report.setdefault("warnings", []).append(str(warning))
     qc_report = add_tensor_and_ld_qc(
         qc_report,
         df,
@@ -524,7 +476,14 @@ if __name__ == "__main__":
         print_project_banner()
 
     try:
-        bfile_path, identity_ld_active, identity_ld_reason = resolve_ld_reference(args)
+        ld_resolution = resolve_ld_reference(
+            args.manifest,
+            ld_reference_mode=args.ld_reference_mode,
+            bfile=args.bfile,
+            allow_identity_ld=args.allow_identity_ld,
+        )
+        for warning in ld_resolution.warnings:
+            print(f"[WARNING] {warning}")
         manifest_df = pd.read_csv(args.manifest)
         if "type" in manifest_df.columns:
             manifest_df["type"] = manifest_df["type"].astype(str).str.lower()
@@ -539,13 +498,14 @@ if __name__ == "__main__":
             seed=args.seed,
             corcondia_threshold=args.corcondia_threshold,
             out_dir=args.out,
-            bfile_path=bfile_path,
+            bfile_path=ld_resolution.bfile_path,
             ld_reference_mode=args.ld_reference_mode,
             ld_min_overlap=args.ld_min_overlap,
             quiet_blocks=args.quiet_blocks,
             allow_identity_ld=args.allow_identity_ld,
-            identity_ld_active=identity_ld_active,
-            identity_ld_reason=identity_ld_reason,
+            identity_ld_active=ld_resolution.identity_ld_active,
+            identity_ld_reason=ld_resolution.identity_ld_reason,
+            ld_policy_warnings=ld_resolution.warnings,
             gene_pruning_mode=args.gene_pruning_mode,
             gene_pruning_top_k=args.gene_pruning_top_k,
             require_mygene_for_ensembl=args.require_mygene_for_ensembl,
