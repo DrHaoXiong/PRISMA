@@ -70,6 +70,7 @@ def initialize_qc_report(
     allele_match_warning: float = 0.90,
     allele_match_fail: float = 0.70,
     allow_low_allele_match: bool = False,
+    exclude_strand_ambiguous: bool = True,
 ) -> dict[str, Any]:
     """Run manifest, schema, and raw allele-overlap QC before loading tensors."""
     report: dict[str, Any] = {
@@ -154,7 +155,7 @@ def initialize_qc_report(
                 report,
             )
             continue
-        allele_report = _qc_allele_harmonization(gwas, eqtl)
+        allele_report = _qc_allele_harmonization(gwas, eqtl, exclude_strand_ambiguous=exclude_strand_ambiguous)
         allele_reports[tissue] = allele_report
         if allele_report["n_gwas_eqtl_overlapping_snps"] == 0:
             _schema_failure(
@@ -234,7 +235,11 @@ def _qc_eqtl_schema(eqtl: pd.DataFrame) -> dict[str, Any]:
     return report
 
 
-def _qc_allele_harmonization(gwas: pd.DataFrame, eqtl: pd.DataFrame) -> dict[str, Any]:
+def _qc_allele_harmonization(
+    gwas: pd.DataFrame,
+    eqtl: pd.DataFrame,
+    exclude_strand_ambiguous: bool = True,
+) -> dict[str, Any]:
     g = gwas[["SNP", "effect_allele", "other_allele"]].drop_duplicates("SNP").copy()
     e = eqtl[["SNP", "A1", "A2"]].drop_duplicates("SNP").copy()
     merged = g.merge(e, on="SNP", how="inner")
@@ -255,7 +260,9 @@ def _qc_allele_harmonization(gwas: pd.DataFrame, eqtl: pd.DataFrame) -> dict[str
         "n_gwas_eqtl_overlapping_snps": n_overlap,
         "matched_allele_count": n_match,
         "flipped_allele_count": n_flip,
-        "strand_ambiguous_removed_count": n_ambiguous,
+        "strand_ambiguous_count": n_ambiguous,
+        "strand_ambiguous_removed_count": n_ambiguous if exclude_strand_ambiguous else 0,
+        "strand_ambiguous_policy": "exclude" if exclude_strand_ambiguous else "keep",
         "allele_mismatch_count": n_mismatch,
         "allele_match_rate": float((n_match + n_flip) / n_overlap) if n_overlap else 0.0,
     }

@@ -11,6 +11,8 @@ from schema import (
     detect_delimiter,
 )
 
+STRAND_AMBIGUOUS = {("A", "T"), ("T", "A"), ("C", "G"), ("G", "C")}
+
 
 def _resolve_manifest_path(path_value, manifest_path):
     path = Path(str(path_value))
@@ -63,6 +65,7 @@ class TensorDataLoader:
         gene_pruning_mode="strongest",
         gene_pruning_top_k=1,
         require_mygene_for_ensembl=False,
+        exclude_strand_ambiguous=True,
     ):
         """
         Initialize loader.
@@ -76,6 +79,7 @@ class TensorDataLoader:
         self.gene_pruning_mode = str(gene_pruning_mode).lower()
         self.gene_pruning_top_k = int(gene_pruning_top_k)
         self.require_mygene_for_ensembl = bool(require_mygene_for_ensembl)
+        self.exclude_strand_ambiguous = bool(exclude_strand_ambiguous)
         if self.gene_pruning_mode not in {"strongest", "none", "top-k"}:
             raise ValueError("--gene-pruning-mode must be one of: strongest, none, top-k.")
         if self.gene_pruning_top_k < 1:
@@ -93,7 +97,7 @@ class TensorDataLoader:
                 _resolve_manifest_path(path_value, manifest_path)
                 for path_value in self.manifest['path']
             ]
-        self.stats = {"warnings": []}
+        self.stats = {"warnings": [], "Strand_Ambiguous_Policy": "exclude" if self.exclude_strand_ambiguous else "keep"}
         print(f"[INFO] Reading data manifest: {manifest_path}")
         print(f"       Found {len(self.manifest)} data files.")
 
@@ -146,13 +150,25 @@ class TensorDataLoader:
         """
         # Join on SNP while preserving all GWAS backbone variants.
         lf_joined = lf_ref.join(lf_target, on='SNP', how='left', suffix='_target')
+        lf_joined = lf_joined.with_columns([
+            pl.col('A1').cast(pl.Utf8).str.to_uppercase().alias('A1'),
+            pl.col('A2').cast(pl.Utf8).str.to_uppercase().alias('A2'),
+            pl.col('A1_target').cast(pl.Utf8).str.to_uppercase().alias('A1_target'),
+            pl.col('A2_target').cast(pl.Utf8).str.to_uppercase().alias('A2_target'),
+        ])
 
         # Allele-alignment flags.
         lf_aligned = lf_joined.with_columns([
             ((pl.col('A1') == pl.col('A1_target')) &
              (pl.col('A2') == pl.col('A2_target'))).alias('match'),
             ((pl.col('A1') == pl.col('A2_target')) &
-             (pl.col('A2') == pl.col('A1_target'))).alias('flip')
+             (pl.col('A2') == pl.col('A1_target'))).alias('flip'),
+            (
+                ((pl.col('A1') == 'A') & (pl.col('A2') == 'T')) |
+                ((pl.col('A1') == 'T') & (pl.col('A2') == 'A')) |
+                ((pl.col('A1') == 'C') & (pl.col('A2') == 'G')) |
+                ((pl.col('A1') == 'G') & (pl.col('A2') == 'C'))
+            ).alias('strand_ambiguous')
         ])
 
         # Compute PRISMA GWAS-eQTL integration scores.
@@ -168,15 +184,23 @@ class TensorDataLoader:
         # Sign of the matched GWAS-eQTL product.
         sign_product = (z_gwas * z_eqtl).sign()
 
+        aligned_ok = (pl.col('match') | pl.col('flip'))
+        if self.exclude_strand_ambiguous:
+            aligned_ok = aligned_ok & (~pl.col('strand_ambiguous'))
+
         # Apply alignment: match keeps sign, flip reverses sign, mismatch is zero.
+        # Strand-ambiguous palindromic SNPs are excluded by default because
+        # they cannot be oriented reliably without allele-frequency checks.
         lf_aligned = lf_aligned.with_columns([
-            pl.when(pl.col('match'))
+            pl.when(aligned_ok & pl.col('match'))
               .then(sign_product * abs_score)
-              .when(pl.col('flip'))
+              .when(aligned_ok & pl.col('flip'))
               .then(-sign_product * abs_score)
               .otherwise(pl.lit(0.0))
               .alias(f'{tissue_name}_Z'),
-            pl.col('TARGET_GENE')
+            pl.when(aligned_ok)
+              .then(pl.col('TARGET_GENE'))
+              .otherwise(pl.lit('no_eqtl'))
               .fill_null(pl.lit('no_eqtl'))
               .alias(f'{tissue_name}_GENE')
         ])
@@ -184,7 +208,10 @@ class TensorDataLoader:
         # Keep only required columns.
         schema_names = lf_aligned.collect_schema().names()
         cols_to_keep = ['SNP', 'CHR', 'BP', 'A1', 'A2', 'GWAS_Z']
-        cols_to_keep += [c for c in schema_names if (c.endswith('_Z') or c.endswith('_GENE')) and c != 'GWAS_Z']
+        cols_to_keep += [
+            c for c in schema_names
+            if (c.endswith('_Z') or c.endswith('_GENE')) and c not in {'GWAS_Z', 'TARGET_GENE'}
+        ]
         lf_aligned = lf_aligned.select([c for c in cols_to_keep if c in schema_names])
 
         return lf_aligned

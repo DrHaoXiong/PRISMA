@@ -75,6 +75,7 @@ def main():
     parser.add_argument("--gene-pruning-mode", choices=["strongest", "none", "top-k"], default="strongest", help="Gene representative pruning mode. Default 'strongest' preserves manuscript-compatible behavior.")
     parser.add_argument("--gene-pruning-top-k", type=int, default=1, help="Number of SNPs per gene when --gene-pruning-mode top-k is used.")
     parser.add_argument("--require-mygene-for-ensembl", action="store_true", help="Fail when Ensembl gene IDs are present but mygene symbol mapping is unavailable.")
+    parser.add_argument("--keep-strand-ambiguous", action="store_true", help="Keep palindromic A/T and C/G SNPs during allele alignment. Default excludes them because strand cannot be resolved without allele frequencies.")
     parser.add_argument("--allow-over-rank", action="store_true", help="Allow rank values larger than the number of tissue columns.")
     args = parser.parse_args()
 
@@ -130,6 +131,7 @@ def main():
             allele_match_warning=args.allele_match_warning,
             allele_match_fail=args.allele_match_fail,
             allow_low_allele_match=args.allow_low_allele_match,
+            exclude_strand_ambiguous=not args.keep_strand_ambiguous,
         )
         loader = TensorDataLoader(
             args.manifest,
@@ -137,6 +139,7 @@ def main():
             gene_pruning_mode=args.gene_pruning_mode,
             gene_pruning_top_k=args.gene_pruning_top_k,
             require_mygene_for_ensembl=args.require_mygene_for_ensembl,
+            exclude_strand_ambiguous=not args.keep_strand_ambiguous,
         )
         df = loader.load_and_align()
     except Exception as e:
@@ -192,6 +195,7 @@ def main():
             "block_assignment_fail": float(args.block_assignment_fail),
             "allow_low_block_assignment": bool(args.allow_low_block_assignment),
             "require_mygene_for_ensembl": bool(args.require_mygene_for_ensembl),
+            "exclude_strand_ambiguous": bool(not args.keep_strand_ambiguous),
             "allow_over_rank": bool(args.allow_over_rank),
         }
         for warning in ld_resolution.warnings:

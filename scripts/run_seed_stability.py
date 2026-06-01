@@ -76,6 +76,7 @@ def main() -> int:
     parser.add_argument("--gene-pruning-mode", choices=["strongest", "none", "top-k"], default="strongest")
     parser.add_argument("--gene-pruning-top-k", type=int, default=1)
     parser.add_argument("--require-mygene-for-ensembl", action="store_true")
+    parser.add_argument("--keep-strand-ambiguous", action="store_true")
     parser.add_argument("--allow-over-rank", action="store_true")
     parser.add_argument("--quiet-blocks", action="store_true")
     parser.add_argument("--no-run", action="store_true", help="Summarize existing seed_* outputs without running PRISMA.")
@@ -129,6 +130,7 @@ def main() -> int:
             "allow_low_allele_match",
             "allow_low_tissue_nonzero",
             "require_mygene_for_ensembl",
+            "keep_strand_ambiguous",
             "allow_over_rank",
             "quiet_blocks",
         ]:
@@ -186,6 +188,7 @@ def main() -> int:
             "gene_pruning_mode": args.gene_pruning_mode,
             "gene_pruning_top_k": args.gene_pruning_top_k,
             "require_mygene_for_ensembl": args.require_mygene_for_ensembl,
+            "keep_strand_ambiguous": args.keep_strand_ambiguous,
             "allow_over_rank": args.allow_over_rank,
         },
         "min_pairwise_aligned_cosine": float(min(row["min_aligned_cosine"] for row in pair_rows)) if pair_rows else 1.0,

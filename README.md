@@ -154,10 +154,12 @@ Rank exploration:
       --out results/mini_fixture_rank
 
 `run_prisma.py --rank auto` and `tune_rank.py` call the same rank-selection
-logic. The shared rule evaluates ranks 1..max_rank, computes fit and a
-CORCONDIA-style diagnostic when possible, selects the lowest non-trivial rank
-passing the threshold, and falls back to a variance-explained elbow when no
-rank passes.
+logic. The shared rule evaluates ranks 1..max_rank, computes fit and a rank
+diagnostic, selects the lowest non-trivial rank passing the threshold, and
+falls back to a variance-explained elbow when no rank passes. For P > 1, the
+diagnostic is formal CORCONDIA. For the public single-phenotype workflow
+(P=1), formal three-mode CORCONDIA is not applicable, so PRISMA reports a
+CORCONDIA-style low-rank consistency diagnostic instead.
 
 For real-data rank tuning, pass the same LD and QC options used by
 `run_prisma.py`, including `--bfile`, `--ld-reference-mode`,
@@ -245,6 +247,10 @@ confirming that the missing block coverage is expected and documented.
   message when overlap is zero.
 - Low allele-match rate: check A1/A2 conventions and whether eQTL beta is
   reported on the same allele basis expected by the input file.
+- Strand-ambiguous A/T and C/G SNPs: PRISMA excludes these by default during
+  allele alignment because strand cannot be resolved reliably without allele
+  frequencies. Use `--keep-strand-ambiguous` only for diagnostic comparisons
+  where this limitation is documented.
 - All-zero or low-nonzero tissue layer: check whether the tissue eQTL file has
   usable overlapping SNPs after allele harmonization. Use
   `--allow-low-tissue-nonzero` only for diagnostics.

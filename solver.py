@@ -42,6 +42,14 @@ class CoupledTensorSolver:
     def solve_local_A(self, tensor_block, laplacian):
         """
         Step 1: update the local SNP factor matrix A_i.
+
+        For fixed B and C, the graph-regularized least-squares optimum solves
+
+            lambda_reg * L_i A_i + A_i M = X_(1) (B odot C),
+
+        where M = (B^T B) * (C^T C). The off-diagonal entries of M couple
+        rank components whenever B or C are not orthogonal, so the update must
+        solve the full matrix equation rather than independent rank columns.
         """
         n_snps = tensor_block.shape[0]
         X_unfold = tensor_block.reshape(n_snps, -1)
@@ -52,18 +60,19 @@ class CoupledTensorSolver:
         BTB = self.B.T @ self.B
         M = CTC * BTB
 
-        A_new = np.zeros((n_snps, self.rank))
+        def mv(v):
+            A = v.reshape(n_snps, self.rank)
+            return (self.lambda_reg * (laplacian @ A) + A @ M).ravel()
 
-        for r in range(self.rank):
-            m_rr = M[r, r]
-            rhs_r = RHS[:, r]
+        operator = LinearOperator((n_snps * self.rank, n_snps * self.rank), matvec=mv)
+        solution, info = cg(operator, RHS.ravel(), rtol=1e-5, atol=1e-8)
+        if info != 0:
+            raise RuntimeError(
+                f"Local A update did not converge for a block with {n_snps} SNPs "
+                f"and rank {self.rank} (cg info={info})."
+            )
 
-            def mv(v):
-                return m_rr * v + self.lambda_reg * (laplacian @ v)
-
-            A_op = LinearOperator((n_snps, n_snps), matvec=mv)
-            col_sol, _ = cg(A_op, rhs_r, rtol=1e-5)
-            A_new[:, r] = col_sol
+        A_new = solution.reshape(n_snps, self.rank)
 
         return A_new, KB
 

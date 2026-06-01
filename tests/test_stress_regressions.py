@@ -164,3 +164,27 @@ def test_incomplete_ld_block_assignment_can_be_explicitly_allowed(tmp_path):
     qc = json.loads((out / "qc_report.json").read_text(encoding="utf-8"))
     assert qc["ld_block_coverage"]["n_snps_unassigned_to_block"] == 2
     assert any("will not appear in Factor_A_SNPs.csv" in w for w in qc["warnings"])
+
+
+def test_strand_ambiguous_snps_are_excluded_by_default(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    manifest = _write_small_fixture(tmp_path)
+    gwas = pd.read_csv(tmp_path / "gwas.tsv", sep="\t")
+    gwas.loc[0, ["a1", "a2"]] = ["A", "T"]
+    gwas.to_csv(tmp_path / "gwas.tsv", sep="\t", index=False)
+    for path in tmp_path.glob("eqtl_*.tsv"):
+        eqtl = pd.read_csv(path, sep="\t")
+        eqtl.loc[0, ["A1", "A2"]] = ["A", "T"]
+        eqtl.to_csv(path, sep="\t", index=False)
+
+    default_out = tmp_path / "default"
+    keep_out = tmp_path / "keep"
+    result = _run_prisma(repo, manifest, default_out)
+    assert result.returncode == 0, result.stdout + result.stderr
+    result = _run_prisma(repo, manifest, keep_out, ["--keep-strand-ambiguous"])
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    assert len(pd.read_csv(default_out / "Factor_A_SNPs.csv")) == 7
+    assert len(pd.read_csv(keep_out / "Factor_A_SNPs.csv")) == 8
+    qc = json.loads((default_out / "qc_report.json").read_text(encoding="utf-8"))
+    assert qc["allele_harmonization"]["retina"]["strand_ambiguous_removed_count"] == 1

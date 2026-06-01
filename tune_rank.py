@@ -61,11 +61,12 @@ def calculate_fit(partitioner, builder, block_defs, B, C, local_As):
 
 def compute_corcondia(X, A, B, C):
     """
-    Compute CORCONDIA (Core Consistency Diagnostic).
-    CORCONDIA = 100 * (1 - ||G_opt - G_super||^2 / ||G_super||^2)
+    Compute a rank diagnostic.
 
-    For a single phenotype (P=1), C is a (1, R) vector and CP decomposition
-    degenerates into matrix factorization, so the diagnostic is adjusted.
+    For P > 1, this computes the Bro-Kiers CORCONDIA core-consistency
+    diagnostic. For P = 1, formal three-mode CORCONDIA is not applicable; the
+    returned value is a CORCONDIA-style low-rank consistency score based on
+    block-level reconstruction quality.
     """
     rank = A.shape[1]
     N, T, P = X.shape
@@ -83,9 +84,9 @@ def compute_corcondia(X, A, B, C):
         error = np.linalg.norm(X_mat - X_recon, 'fro')
         total = np.linalg.norm(X_mat, 'fro')
 
-        # Convert to a CORCONDIA-like percentage.
-        corcondia = 100 * (1 - (error / (total + 1e-12))**2)
-        return corcondia
+        # Convert to a CORCONDIA-style consistency percentage.
+        consistency = 100 * (1 - (error / (total + 1e-12))**2)
+        return consistency
 
     # Standard CORCONDIA for multiple phenotypes (P > 1).
     # Mode-1 unfolding
@@ -115,6 +116,23 @@ def compute_corcondia(X, A, B, C):
 
     corcondia = 100 * (1 - (diff_norm ** 2) / (super_norm ** 2 + 1e-12))
     return corcondia
+
+
+def _diagnostic_metadata(n_phenos: int) -> dict[str, object]:
+    formal = int(n_phenos) > 1
+    if formal:
+        return {
+            "column": "CORCONDIA",
+            "name": "CORCONDIA",
+            "short_label": "CORCONDIA",
+            "formal_corcondia_applicable": True,
+        }
+    return {
+        "column": "Low_Rank_Consistency",
+        "name": "CORCONDIA-style low-rank consistency diagnostic",
+        "short_label": "Low-rank consistency",
+        "formal_corcondia_applicable": False,
+    }
 
 
 def _elbow_rank(ranks, fits):
@@ -148,7 +166,8 @@ def select_rank(
 
     ranks = list(range(1, int(max_rank) + 1))
     fits = []
-    concordias = []
+    diagnostic_values = []
+    diagnostic_meta = _diagnostic_metadata(n_phenos)
 
     for r in ranks:
         print(f"\n[INFO] Evaluating Rank = {r} ...")
@@ -165,39 +184,49 @@ def select_rank(
             corcondia_scores.append(compute_corcondia(X_i, A_i, B, C))
 
         fit = calculate_fit(partitioner, builder, block_defs, B, C, local_As)
-        avg_corcondia = float(np.mean(corcondia_scores)) if corcondia_scores else float("nan")
+        avg_diagnostic = float(np.mean(corcondia_scores)) if corcondia_scores else float("nan")
         fits.append(float(fit))
-        concordias.append(avg_corcondia)
-        print(f"   Rank {r} -> Fit: {fit:.4f}, CORCONDIA: {avg_corcondia:.2f}%")
+        diagnostic_values.append(avg_diagnostic)
+        print(
+            f"   Rank {r} -> Fit: {fit:.4f}, "
+            f"{diagnostic_meta['short_label']}: {avg_diagnostic:.2f}%"
+        )
 
     passing = [
-        idx for idx, (rank_value, corcondia) in enumerate(zip(ranks, concordias))
-        if rank_value > 1 and corcondia >= corcondia_threshold
+        idx for idx, (rank_value, diagnostic) in enumerate(zip(ranks, diagnostic_values))
+        if rank_value > 1 and diagnostic >= corcondia_threshold
     ]
     if passing:
         selected_idx = passing[0]
         selection_rule = (
-            f"selected lowest non-trivial rank with CORCONDIA >= {corcondia_threshold:.1f}%"
+            f"selected lowest non-trivial rank with {diagnostic_meta['name']} >= {corcondia_threshold:.1f}%"
         )
         fallback_used = False
     else:
         selected_rank_fallback = _elbow_rank(ranks, fits)
         selected_idx = ranks.index(selected_rank_fallback)
-        selection_rule = "variance-explained elbow fallback because no rank passed CORCONDIA threshold"
+        selection_rule = f"variance-explained elbow fallback because no rank passed {diagnostic_meta['name']} threshold"
         fallback_used = True
 
     selected_rank = int(ranks[selected_idx])
     diagnostics = pd.DataFrame({
         "Rank": ranks,
         "Variance_Explained": fits,
-        "CORCONDIA": concordias,
+        str(diagnostic_meta["column"]): diagnostic_values,
+        "Formal_CORCONDIA_Applicable": bool(diagnostic_meta["formal_corcondia_applicable"]),
     })
     selection = {
         "candidate_ranks": ranks,
         "selected_rank": selected_rank,
         "selection_rule": selection_rule,
-        "corcondia_threshold": float(corcondia_threshold),
-        "corcondia_values": concordias,
+        "diagnostic_name": diagnostic_meta["name"],
+        "diagnostic_column": diagnostic_meta["column"],
+        "formal_corcondia_applicable": bool(diagnostic_meta["formal_corcondia_applicable"]),
+        "diagnostic_threshold": float(corcondia_threshold),
+        "diagnostic_values": diagnostic_values,
+        "corcondia_threshold": float(corcondia_threshold) if diagnostic_meta["formal_corcondia_applicable"] else None,
+        "corcondia_values": diagnostic_values if diagnostic_meta["formal_corcondia_applicable"] else None,
+        "rank_consistency_values": diagnostic_values if not diagnostic_meta["formal_corcondia_applicable"] else None,
         "fit_values": fits,
         "fallback_used": fallback_used,
     }
@@ -228,6 +257,7 @@ def run_tuning(
     gene_pruning_mode="strongest",
     gene_pruning_top_k=1,
     require_mygene_for_ensembl=False,
+    exclude_strand_ambiguous=True,
     tissue_nonzero_warning=0.01,
     tissue_nonzero_fail=0.001,
     allow_low_tissue_nonzero=False,
@@ -262,6 +292,7 @@ def run_tuning(
         allele_match_warning=allele_match_warning,
         allele_match_fail=allele_match_fail,
         allow_low_allele_match=allow_low_allele_match,
+        exclude_strand_ambiguous=exclude_strand_ambiguous,
     )
     loader = TensorDataLoader(
         manifest_path,
@@ -269,6 +300,7 @@ def run_tuning(
         gene_pruning_mode=gene_pruning_mode,
         gene_pruning_top_k=gene_pruning_top_k,
         require_mygene_for_ensembl=require_mygene_for_ensembl,
+        exclude_strand_ambiguous=exclude_strand_ambiguous,
     )
     df = loader.load_and_align()
 
@@ -309,6 +341,7 @@ def run_tuning(
         "block_assignment_fail": float(block_assignment_fail),
         "allow_low_block_assignment": bool(allow_low_block_assignment),
         "require_mygene_for_ensembl": bool(require_mygene_for_ensembl),
+        "exclude_strand_ambiguous": bool(exclude_strand_ambiguous),
         "allow_over_rank": bool(allow_over_rank),
     }
     for warning in ld_policy_warnings or []:
@@ -357,7 +390,9 @@ def run_tuning(
     )
     ranks = list(results_df["Rank"])
     fits = list(results_df["Variance_Explained"])
-    concordias = list(results_df["CORCONDIA"])
+    diagnostic_column = selection.get("diagnostic_column", "CORCONDIA")
+    diagnostic_label = selection.get("diagnostic_name", "CORCONDIA")
+    diagnostic_values = list(results_df[diagnostic_column])
     selected_idx = ranks.index(selected_rank)
     selection_note = selection["selection_rule"]
 
@@ -393,12 +428,12 @@ def run_tuning(
     ax1.set_xticks(ranks)
     ax1.legend(loc='lower right', fontsize=8, frameon=True)
 
-    # === Right panel: CORCONDIA Diagnostic ===
-    ax2.plot(ranks, concordias, 's-', linewidth=2.5, markersize=7,
-             color=COLOR_SECONDARY, label='CORCONDIA', zorder=2)
+    # === Right panel: rank diagnostic ===
+    ax2.plot(ranks, diagnostic_values, 's-', linewidth=2.5, markersize=7,
+             color=COLOR_SECONDARY, label=str(diagnostic_label), zorder=2)
 
     # Highlight the dynamically selected rank.
-    ax2.plot(selected_rank, concordias[selected_idx], 's', markersize=10,
+    ax2.plot(selected_rank, diagnostic_values[selected_idx], 's', markersize=10,
              color=COLOR_SELECTED, zorder=10,
              markeredgewidth=2, markeredgecolor=COLOR_SELECTED,
              markerfacecolor='white', label=f'Selected (R={selected_rank})')
@@ -408,13 +443,13 @@ def run_tuning(
                 label='Threshold (80%)', zorder=0)
 
     # Annotate selected rank.
-    ax2.text(selected_rank, concordias[selected_idx] + 5,
-            f'R={selected_rank}: {concordias[selected_idx]:.1f}%',
+    ax2.text(selected_rank, diagnostic_values[selected_idx] + 5,
+            f'R={selected_rank}: {diagnostic_values[selected_idx]:.1f}%',
             fontsize=8, ha='center', color=COLOR_SELECTED, fontweight='normal')
 
-    ax2.set_title('B. CORCONDIA Diagnostic', fontsize=12, fontweight='bold', pad=10)
+    ax2.set_title(f'B. {diagnostic_label}', fontsize=12, fontweight='bold', pad=10)
     ax2.set_xlabel('Rank (R)', fontsize=10)
-    ax2.set_ylabel('CORCONDIA (%)', fontsize=10)
+    ax2.set_ylabel(f'{diagnostic_label} (%)', fontsize=10)
     ax2.set_ylim([0, 105])
     ax2.legend(loc='lower right', fontsize=8, frameon=True)
     ax2.grid(True, linestyle='--', alpha=0.3, color='gray')
@@ -437,15 +472,17 @@ def run_tuning(
     print("\nRank Selection Results:")
     print(results_df.to_string(index=False))
     print(f"\n[INFO] Selected Rank: R={selected_rank} ({selection_note}).")
-    print("\n[INFO] Suggested criterion: choose a rank with CORCONDIA > 80% "
-          "where variance explained starts to plateau.")
+    print(
+        f"\n[INFO] Suggested criterion: choose a rank with {diagnostic_label} > "
+        "the configured threshold where variance explained starts to plateau."
+    )
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="PRISMA automatic rank tuning.")
     parser.add_argument("--manifest", required=True, help="Input data manifest CSV.")
     parser.add_argument("--bed", required=True, help="LD block BED file.")
     parser.add_argument("--max_rank", type=int, default=10, help="Maximum rank to evaluate.")
-    parser.add_argument("--corcondia-threshold", type=float, default=80.0, help="CORCONDIA threshold for automatic rank selection.")
+    parser.add_argument("--corcondia-threshold", type=float, default=80.0, help="Threshold for CORCONDIA when P>1, or the CORCONDIA-style low-rank consistency diagnostic when P=1.")
     parser.add_argument("--out", default="results", help="Output directory for rank diagnostics.")
     parser.add_argument("--no_banner", action="store_true", help="Suppress the PRISMA startup banner.")
     parser.add_argument("--seed", "--rank-seed", dest="seed", type=int, default=42, help="Random seed for rank selection. Use a negative value to leave it unset.")
@@ -469,6 +506,7 @@ if __name__ == "__main__":
     parser.add_argument("--gene-pruning-mode", choices=["strongest", "none", "top-k"], default="strongest", help="Gene representative pruning mode.")
     parser.add_argument("--gene-pruning-top-k", type=int, default=1, help="Number of SNPs per gene when --gene-pruning-mode top-k is used.")
     parser.add_argument("--require-mygene-for-ensembl", action="store_true", help="Fail when Ensembl gene IDs are present but mygene symbol mapping is unavailable.")
+    parser.add_argument("--keep-strand-ambiguous", action="store_true", help="Keep palindromic A/T and C/G SNPs during allele alignment. Default excludes them because strand cannot be resolved without allele frequencies.")
     parser.add_argument("--allow-over-rank", action="store_true", help="Allow rank values larger than the number of tissue columns.")
     args = parser.parse_args()
 
@@ -509,6 +547,7 @@ if __name__ == "__main__":
             gene_pruning_mode=args.gene_pruning_mode,
             gene_pruning_top_k=args.gene_pruning_top_k,
             require_mygene_for_ensembl=args.require_mygene_for_ensembl,
+            exclude_strand_ambiguous=not args.keep_strand_ambiguous,
             tissue_nonzero_warning=args.tissue_nonzero_warning,
             tissue_nonzero_fail=args.tissue_nonzero_fail,
             allow_low_tissue_nonzero=args.allow_low_tissue_nonzero,
