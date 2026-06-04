@@ -57,6 +57,13 @@ The manuscript-associated derived data and reproducibility materials are distrib
 
 This Zenodo package is a companion reproducibility package, not a mirror of this public source-code repository. Version v2 includes updated supplementary tables and legends, target-derivation materials for the 549 PRISMA target rows and 405 unique-gene projection, post-GWAS comparator summary materials, reproducibility scripts, and refreshed checksum manifests. The original v1 record is retained for provenance. Restricted raw GWAS/eQTL inputs, raw single-cell matrices, individual-level data, and controlled-access resources remain excluded.
 
+## Peer-Review LD Provenance Note
+
+Real-data LD-aware PRISMA runs require an empirical PLINK reference supplied via
+`--bfile` and should archive the exact command, PLINK file hashes, `qc_report.json`,
+`qc_summary.csv`, and postfit empirical-LD usage fields. Runtime commands that
+omit `--bfile` are not sufficient evidence of empirical PLINK-LD usage.
+
 ## Recommended Next Step
 
 After reviewing this public core, keep future additions restricted to sanitized examples, tests, and reusable utilities unless manuscript-specific or restricted-data dependencies have been removed.

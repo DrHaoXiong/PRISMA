@@ -18,6 +18,20 @@ Version v2 includes updated supplementary tables and legends, target-derivation 
 
 The Zenodo package contains author-generated derived data, supplementary tables, supplementary data, supplementary notes, and checksums. It does not redistribute restricted raw eQTL files, raw single-cell matrices, individual-level genotype/phenotype data, or controlled-access data. External resources remain subject to their original data-use terms.
 
+## Peer-Review Release and LD Provenance
+
+This repository contains the public PRISMA core code available during peer
+review. For real-data LD-aware analyses, PRISMA requires an empirical PLINK
+reference through `--bfile` with `--ld-reference-mode plink` or `auto`. The
+synthetic smoke tests use identity-LD mode only when explicitly permitted with
+`--allow-identity-ld`; those examples are software checks and are not empirical
+LD analyses.
+
+Commands or runtime benchmarks that do not include `--bfile` should not be
+treated as evidence of empirical PLINK-LD usage. Primary real-data provenance
+should archive the exact command, PLINK reference hashes, `qc_report.json`,
+`qc_summary.csv`, and the postfit LD usage fields reported by PRISMA.
+
 ## Core Files
 
 - run_prisma.py: main command-line entry point.
