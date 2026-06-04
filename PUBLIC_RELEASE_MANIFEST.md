@@ -48,13 +48,14 @@ Public setup files:
 
 ## Companion Data Package
 
-The manuscript-associated derived data and reproducibility materials are distributed separately on Zenodo:
+The manuscript-associated derived data and reproducibility materials are distributed separately on Zenodo v2:
 
-- PRISMA diabetic retinopathy derived data and reproducibility package
-- DOI: `10.5281/zenodo.20340998`
-- URL: https://doi.org/10.5281/zenodo.20340998
+- PRISMA diabetic retinopathy derived data and reproducibility package v2
+- DOI: `10.5281/zenodo.20535036`
+- URL: https://zenodo.org/records/20535036
+- SHA256 for `Zenodo_PRISMA_data_package_v2.zip`: `213afd36f9cb2954765f190926d4da269bde85a47a40b87680924f4cb1d38c22`
 
-This Zenodo package is a companion reproducibility package, not a mirror of this public source-code repository. It contains author-generated derived data, supplementary tables, supplementary data, supplementary notes, and checksums, while restricted raw GWAS/eQTL inputs, raw single-cell matrices, individual-level data, and controlled-access resources remain excluded.
+This Zenodo package is a companion reproducibility package, not a mirror of this public source-code repository. Version v2 includes updated supplementary tables and legends, target-derivation materials for the 549 PRISMA target rows and 405 unique-gene projection, post-GWAS comparator summary materials, reproducibility scripts, and refreshed checksum manifests. The original v1 record is retained for provenance. Restricted raw GWAS/eQTL inputs, raw single-cell matrices, individual-level data, and controlled-access resources remain excluded.
 
 ## Recommended Next Step
 
