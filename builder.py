@@ -27,6 +27,9 @@ class TensorBuilder:
         self.ld_min_overlap = int(ld_min_overlap)
         self.quiet_blocks = quiet_blocks
         self._snp_map = None  # Cached SNP ID -> index map.
+        self._bed_reader = None
+        self._bed_file = None
+        self._laplacian_cache = {}
         self.laplacian_stats = {
             "ld_reference_mode": ld_reference_mode,
             "bfile_path": bfile_path,
@@ -34,6 +37,7 @@ class TensorBuilder:
             "n_blocks_empirical_laplacian": 0,
             "n_blocks_dropped_insufficient_snps": 0,
             "n_laplacian_calls": 0,
+            "n_laplacian_cache_hits": 0,
             "n_snps_seen_for_laplacian": 0,
             "n_snps_with_reference_overlap": 0,
             "last_block_modes": [],
@@ -42,12 +46,32 @@ class TensorBuilder:
         # Read the .bim file during initialization when a reference panel is supplied.
         if self.bfile_path is not None:
             bim_file = f"{self.bfile_path}.bim"
+            self._bed_file = f"{self.bfile_path}.bed" if not str(self.bfile_path).endswith(".bed") else self.bfile_path
             try:
                 bim_df = pd.read_csv(bim_file, sep=r"\s+", header=None, usecols=[1], engine="python")
                 self._snp_map = {snp: idx for idx, snp in enumerate(bim_df[1].values)}
                 print(f"[INFO] Loaded PLINK BIM SNP map: {len(self._snp_map)} variants from {bim_file}")
             except Exception as e:
                 raise ValueError(f"Could not read PLINK .bim file for LD reference: {bim_file}") from e
+
+    def _get_bed_reader(self):
+        if self._bed_reader is None:
+            try:
+                from bed_reader import open_bed
+                self._bed_reader = open_bed(self._bed_file)
+            except Exception as e:
+                raise ValueError(f"Could not read PLINK .bed file for LD reference: {self._bed_file}") from e
+        return self._bed_reader
+
+    def _record_laplacian_mode(self, mode, n_snps, n_reference_overlap):
+        self.laplacian_stats["n_snps_with_reference_overlap"] += int(n_reference_overlap)
+        if mode == "empirical":
+            self.laplacian_stats["n_blocks_empirical_laplacian"] += 1
+        else:
+            self.laplacian_stats["n_blocks_identity_laplacian"] += 1
+            if mode == "identity_insufficient_overlap":
+                self.laplacian_stats["n_blocks_dropped_insufficient_snps"] += 1
+        self.laplacian_stats["last_block_modes"].append(mode)
 
     def get_reference_overlap_count(self, snp_list):
         if self._snp_map is None:
@@ -108,16 +132,22 @@ class TensorBuilder:
 
         # Map SNPs to reference-panel indices.
         snp_list = block_df['SNP'].values
+        cache_key = tuple(str(snp) for snp in snp_list)
+        cached = self._laplacian_cache.get(cache_key)
+        if cached is not None:
+            L_cached, mode_cached, n_overlap_cached = cached
+            self.laplacian_stats["n_laplacian_cache_hits"] += 1
+            self._record_laplacian_mode(mode_cached, n_snps, n_overlap_cached)
+            return L_cached
+
         found_indices, found_mask = self._get_snp_indices(snp_list)
-        self.laplacian_stats["n_snps_with_reference_overlap"] += int(len(found_indices))
 
         # Initialize as identity; unmatched SNPs remain independent.
         L = np.eye(n_snps)
 
         if len(found_indices) < self.ld_min_overlap:
-            self.laplacian_stats["n_blocks_identity_laplacian"] += 1
-            self.laplacian_stats["n_blocks_dropped_insufficient_snps"] += 1
-            self.laplacian_stats["last_block_modes"].append("identity_insufficient_overlap")
+            self._record_laplacian_mode("identity_insufficient_overlap", n_snps, len(found_indices))
+            self._laplacian_cache[cache_key] = (L, "identity_insufficient_overlap", len(found_indices))
             if not self.quiet_blocks:
                 print(
                     "[WARNING] LD block used identity Laplacian "
@@ -128,15 +158,13 @@ class TensorBuilder:
 
         # Read genotype matrix.
         try:
-            from bed_reader import open_bed
-            bed_file = f"{self.bfile_path}.bed" if not str(self.bfile_path).endswith(".bed") else self.bfile_path
-            with open_bed(bed_file) as bed:
-                try:
-                    G = bed.read(index=np.s_[:, found_indices])  # [N_individuals, M_found_snps]
-                except Exception:
-                    G = bed.read(index=found_indices)
+            bed = self._get_bed_reader()
+            try:
+                G = bed.read(index=np.s_[:, found_indices])  # [N_individuals, M_found_snps]
+            except Exception:
+                G = bed.read(index=found_indices)
         except Exception as e:
-            raise ValueError(f"Could not read PLINK .bed file for LD reference: {bed_file}") from e
+            raise ValueError(f"Could not read PLINK .bed file for LD reference: {self._bed_file}") from e
 
         # Mean-impute missing genotypes.
         col_means = np.nanmean(G, axis=0)
@@ -165,8 +193,8 @@ class TensorBuilder:
             for j, idx_j in enumerate(found_idx_list):
                 L[idx_i, idx_j] = L_sub[i, j]
 
-        self.laplacian_stats["n_blocks_empirical_laplacian"] += 1
-        self.laplacian_stats["last_block_modes"].append("empirical")
+        self._record_laplacian_mode("empirical", n_snps, len(found_indices))
+        self._laplacian_cache[cache_key] = (L, "empirical", len(found_indices))
         if not self.quiet_blocks:
             print(f"[INFO] LD block used empirical LD graph for {len(found_indices)}/{n_snps} SNPs.")
         return L

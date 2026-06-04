@@ -14,6 +14,8 @@ helpers, and public documentation.
 - QC reports for schema, allele harmonization, tensor coverage, LD block
   assignment, and postfit Laplacian usage.
 - Shared rank-selection logic and seed-stability utility.
+- In-memory empirical-LD Laplacian caching and reused PLINK bed-reader handles
+  to avoid recomputing identical block Laplacians across ALS epochs.
 
 ## Data Scope
 

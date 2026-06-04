@@ -30,4 +30,11 @@ def test_builder_uses_empirical_plink_ld(tmp_path):
     stats = builder.summarize_laplacian_usage()
     assert laplacian.shape == (2, 2)
     assert stats["n_blocks_empirical_laplacian"] == 1
+    assert stats["n_laplacian_cache_hits"] == 0
     assert stats["fraction_snps_with_empirical_ld"] == 1.0
+
+    cached_laplacian = builder.build_laplacian(block)
+    cached_stats = builder.summarize_laplacian_usage()
+    np.testing.assert_allclose(cached_laplacian, laplacian)
+    assert cached_stats["n_laplacian_cache_hits"] == 1
+    assert cached_stats["n_blocks_empirical_laplacian"] == 2
