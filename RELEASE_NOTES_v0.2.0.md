@@ -21,8 +21,9 @@ helpers, and public documentation.
 
 Manuscript-associated derived data are archived separately on Zenodo:
 
-- Current companion package: https://zenodo.org/records/20535036
-- DOI: `10.5281/zenodo.20535036`
+- Current companion package: https://zenodo.org/records/20551063
+- DOI: `10.5281/zenodo.20551063`
+- SHA256 for `Zenodo_PRISMA_data_package_v3.zip`: `F607FBFBE1BA89BEDF6A64488FF06891F951C25506FB8E21BC21346C7024F6AB`
 
 Restricted raw GWAS/eQTL inputs, individual-level data, raw single-cell
 matrices, and controlled-access resources are not redistributed in this source

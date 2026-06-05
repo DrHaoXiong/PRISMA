@@ -1,6 +1,6 @@
 # PRISMA
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20535036.svg)](https://doi.org/10.5281/zenodo.20535036)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20551063.svg)](https://doi.org/10.5281/zenodo.20551063)
 
 PRISMA (Polygenic Risk Integration via Summary-statistics Multi-tissue Array-decomposition) decomposes GWAS summary statistics and multi-tissue eQTL evidence into interpretable tissue-anchored polygenic axes.
 
@@ -8,13 +8,13 @@ This public release currently contains the core computational engine only. Raw G
 
 ## Reproducibility Data Package
 
-The current derived data and reproducibility materials accompanying the PRISMA diabetic retinopathy manuscript are available on Zenodo v2:
+The current derived data and reproducibility materials accompanying the PRISMA diabetic retinopathy manuscript are available on Zenodo v3:
 
-- [PRISMA diabetic retinopathy derived data and reproducibility package v2](https://zenodo.org/records/20535036)
-- DOI: `10.5281/zenodo.20535036`
-- SHA256 for `Zenodo_PRISMA_data_package_v2.zip`: `213afd36f9cb2954765f190926d4da269bde85a47a40b87680924f4cb1d38c22`
+- [PRISMA diabetic retinopathy derived data and reproducibility package v3](https://zenodo.org/records/20551063)
+- DOI: `10.5281/zenodo.20551063`
+- SHA256 for `Zenodo_PRISMA_data_package_v3.zip`: `F607FBFBE1BA89BEDF6A64488FF06891F951C25506FB8E21BC21346C7024F6AB`
 
-Version v2 includes updated supplementary tables and legends, target-derivation materials for the 549 PRISMA target rows and 405 unique-gene projection, post-GWAS comparator summary materials, reproducibility scripts, and refreshed checksum manifests. The original v1 record is retained for provenance.
+Version v3 adds empirical-LD primary-run provenance, including exact command and QC reports, and an exact reconstruction of Supplementary Table 5 from archived target-ranking intermediates and hg19 gene-position annotations. The reconstruction documents the 549 PRISMA target rows, 405 unique gene symbols, and axis-specific target counts reported in the manuscript. Previous versions are retained for provenance.
 
 The Zenodo package contains author-generated derived data, supplementary tables, supplementary data, supplementary notes, and checksums. It does not redistribute restricted raw eQTL files, raw single-cell matrices, individual-level genotype/phenotype data, or controlled-access data. External resources remain subject to their original data-use terms.
 
